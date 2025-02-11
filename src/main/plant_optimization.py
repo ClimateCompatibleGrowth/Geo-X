@@ -17,6 +17,11 @@ import numpy as np
 import pandas as pd
 import pyomo.environ as pm
 from network import Network
+########################################### HYRDOPOWER FUNCTIONS ########################################
+
+
+
+#########################################################################################################
 
 def get_demand_schedule(quantity, start_date, end_date, transport_state, transport_params_filepath, freq):
     '''
@@ -127,7 +132,7 @@ def get_generator_profile(generator, cutout, layout, hexagons, freq):
     Parameters
     ----------
     generator : string
-        The name of the generator type to be used (i.e., "Solar" for pv, "Wind" for wind turbines)
+        The name of the generator type to be used (i.e., "solar" for pv, "wind" for wind turbines)
     cutout : 
         A spatial and temporal subset of ERA-5 weather data consisting of grid cells
         https://atlite.readthedocs.io/en/latest/introduction.html
@@ -143,7 +148,7 @@ def get_generator_profile(generator, cutout, layout, hexagons, freq):
         A profile where weather data has been converted into a generation time-series.
         https://atlite.readthedocs.io/en/master/ref_api.html
     '''
-    if generator == "Solar":
+    if generator == "solar":
         # The panel string should be in the config file as well in case people want to change that in the prep and main.
         # Alycia to double-check that the CSi is 1MW
         profile = cutout.pv(panel= str(snakemake.config["panel"]),
@@ -152,7 +157,7 @@ def get_generator_profile(generator, cutout, layout, hexagons, freq):
                             shapes = hexagons,
                             per_unit = True).resample(time=freq).mean()
         profile = profile.rename(dict(dim_0='hexagon'))
-    elif generator == "Wind":
+    elif generator == "wind":
         # This string is what we should need to put in the config file (turbine) for both data prep, replacing the constant 4, replacing here.
         profile = cutout.wind(turbine = str(snakemake.config["turbine"]),
                             layout = layout,
@@ -342,7 +347,7 @@ if __name__ == "__main__":
 
     # Get a uniform capacity layout for all grid cells. https://atlite.readthedocs.io/en/master/ref_api.html
     # Alycia to double-check we are using the right layout
-    cutout_filepath = f'Cutouts/{snakemake.wildcards.country}_{snakemake.wildcards.weather_year}.nc'
+    cutout_filepath = f'cutouts/{snakemake.wildcards.country}_{snakemake.wildcards.weather_year}.nc'
     cutout = atlite.Cutout(cutout_filepath)
     layout = cutout.uniform_layout()
     profiles = []
@@ -350,8 +355,20 @@ if __name__ == "__main__":
     water_limit = bool(snakemake.config['water_limit'])
     freq = str(snakemake.config['freq'])
     
+    #################################### HYRDOPOWER MAIN-CODE SECTION ############################################
+
+
+
+    #########################################################################################################
+
+
+
     for gen in generators.keys():
-         profiles.append(get_generator_profile(gen, cutout, layout, hexagons, freq))
+         #### newly added for hydro to make sense:
+         if gen == "hydro":
+            profiles.append(hydro_profile)         
+         else:
+            profiles.append(get_generator_profile(gen, cutout, layout, hexagons, freq))
     
     times = profiles[0].time
     plant_type = str(snakemake.wildcards.plant_type)
@@ -403,12 +420,15 @@ if __name__ == "__main__":
                 elif plant_type == "ammonia":
                     potential = profiles[gen_index].sel(hexagon=i, time=trucking_demand_schedule.index)
                 # -- Eventually make a for loop - we can change the theo_turbines name to be Wind
-                gen_capacity = int(snakemake.config['gen_capacity'][f'{gen.lower()}'])
-                if gen == "Wind":
+                gen_capacity = int(snakemake.config['gen_capacity'][f'{gen}'])
+                if gen == "wind":
                     # -- We'll need to remove this hard-coded 4 eventually CONFIG FILE - 4 MW turbine in spatial data prep
                     max_capacity = hexagons.loc[i,'theo_turbines']*gen_capacity
-                elif gen == "Solar":
+                elif gen == "solar":
                     max_capacity = hexagons.loc[i,'theo_pv']*gen_capacity
+                ##### elif added newly for hydro, need to double check the column name
+                elif gen == "hydro":
+                    max_capacity = hexagons.loc[i,'hydro']*gen_capacity
                 # -- Eventually move loops to something like this so we don't have ifs - max_capacity = hexagons.loc[i, gen] * SNAKEMAKE_CONFIG_GEN_SIZE
                 
                 generators[gen].append(potential)
@@ -532,7 +552,7 @@ if __name__ == "__main__":
         print("\nOptimisation complete.\n")        
         # Updating trucking-based results in hexagon file
         for gen, capacities in t_generators_capacities.items():
-            hexagons[f'{demand_center} trucking {gen.lower()} capacity'] = capacities
+            hexagons[f'{demand_center} trucking {gen} capacity'] = capacities
         hexagons[f'{demand_center} trucking electrolyzer capacity'] = t_electrolyzer_capacities
         hexagons[f'{demand_center} trucking battery capacity'] = t_battery_capacities
         hexagons[f'{demand_center} trucking H2 storage capacity'] = t_h2_storages
@@ -542,7 +562,7 @@ if __name__ == "__main__":
 
         # Updating pipeline-based results in hexagon file
         for gen, capacities in p_generators_capacities.items():
-            hexagons[f'{demand_center} pipeline {gen.lower()} capacity'] = capacities
+            hexagons[f'{demand_center} pipeline {gen} capacity'] = capacities
         hexagons[f'{demand_center} pipeline electrolyzer capacity'] = p_electrolyzer_capacities
         hexagons[f'{demand_center} pipeline battery capacity'] = p_battery_capacities
         hexagons[f'{demand_center} pipeline H2 storage capacity'] = p_h2_storages
