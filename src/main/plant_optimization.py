@@ -120,6 +120,54 @@ def get_water_constraint(n, demand_profile, water_limit):
         # note that this constraint is purely stoichiometric-- more water may be needed for cooling or other processes
     return water_constraint
 
+def hydropower_potential(eta,flowrate,head):
+    '''
+    Calculate hydropower potential in Megawatts
+
+    Parameters
+    ----------
+    eta : float
+        Efficiency of the hydropower plant.
+    flowrate : float
+        Flowrate calculated with runoff multiplied by the hydro-basin area, in cubic meters per hour.
+    head : float
+        Height difference at the hydropower site, in meters.
+
+    Returns
+    -------
+    float
+        Hydropower potential in Megawatts (MW).
+    '''
+    rho = 997 # kg/m3; Density of water
+    g = physical_constants['standard acceleration of gravity'][0] # m/s2; Based on the CODATA constants 2018
+    Q = (flowrate/(1000/24)) / 3600 # transform flowrate per h into flowrate per second
+    return (eta * rho * g * Q * head) / (1000 * 1000) # MW
+
+def hydropower_potential_with_capacity(flowrate, head, capacity, eta):
+    '''
+    Calculate the hydropower potential considering the capacity limit
+
+    Parameters
+    ----------
+    flowrate : float
+        Flowrate calculated with runoff multiplied by the hydro-basin area, in cubic meters per hour.
+    head : float
+        Height difference at the hydropower site, in meters.
+    capacity : float
+        Maximum hydropower capacity in Megawatts (MW).
+    eta : float
+        Efficiency of the hydropower plant.
+
+    Returns
+    -------
+    xarray DataArray
+        Capacity factor, which is the limited potential divided by the capacity.
+    '''
+    potential = hydropower_potential(flowrate, head, eta)
+    limited_potential = xr.where(potential > capacity, capacity, potential)
+    capacity_factor = limited_potential / capacity
+    return capacity_factor
+
 def get_generator_profile(generator, cutout, layout, hexagons, freq):
     '''
     Determines the generation profile of the specified generator in the cutout based on weather data.
@@ -159,6 +207,67 @@ def get_generator_profile(generator, cutout, layout, hexagons, freq):
                             shapes = hexagons,
                             per_unit = True).resample(time=freq).mean()
         profile = profile.rename(dict(dim_0='hexagon'))
+    elif generator == "Hydro":
+        location_hydro = gpd.read_file('Data/hydropower_dams.gpkg')
+        location_hydro.rename(columns={'Latitude': 'lat', 'Longitude': 'lon'}, inplace=True)
+        location_hydro.rename(columns={'head_example':'head'},inplace=True)
+        
+        laos_hydrobasins = gpd.read_file('Hydrobasins/hybas_as_lev10_v1c.shp')
+        laos_hydrobasins['lat'] = location_hydro.geometry.y
+        laos_hydrobasins['lon'] = location_hydro.geometry.x
+        
+        runoff = cutout.hydro(
+            plants=location_hydro,
+            hydrobasins= laos_hydrobasins,
+            per_unit=True # Normalize output per unit area
+        )
+        
+        eta = 0.75 # set efficiency of hydropower plant
+    
+        capacity_factor = xr.apply_ufunc(
+            hydropower_potential_with_capacity,
+            runoff,
+            xr.DataArray(location_hydro['head'].values, dims=['plant']),
+            xr.DataArray(location_hydro['capacity'].values, dims=['plant']),
+            eta,
+            vectorize=True,
+            dask='parallelized',  # Dask for parallel computation
+            output_dtypes=[float]
+        )
+        
+        location_hydro['geometry'] = gpd.points_from_xy(location_hydro.lon, location_hydro.lat)
+    
+    
+        # Rename existing 'index_left' and 'index_right' columns if they exist
+        if 'index_left' in location_hydro.columns:
+            location_hydro = location_hydro.rename(columns={'index_left': 'index_left_renamed'})
+        if 'index_right' in location_hydro.columns:
+            location_hydro = location_hydro.rename(columns={'index_right': 'index_right_renamed'})
+        if 'index_left' in hexagons.columns:
+            hexagons = hexagons.rename(columns={'index_left': 'index_left_renamed'})
+        if 'index_right' in hexagons.columns:
+            hexagons = hexagons.rename(columns={'index_right': 'index_right_renamed'})
+    
+        hydro_hex_mapping = gpd.sjoin(location_hydro, hexagons, how='left', predicate='within')
+        hydro_hex_mapping['plant_index'] = hydro_hex_mapping.index
+        num_hexagons = len(hexagons)
+        num_time_steps = len(capacity_factor.time)
+    
+        hydro_profile = xr.DataArray(
+            data=np.zeros((num_hexagons, num_time_steps)),
+            dims=['hexagon', 'time'],
+            coords={'hexagon': np.arange(num_hexagons), 'time': capacity_factor.time}
+        )
+    
+        for hex_index in range(num_hexagons):
+            plants_in_hex = hydro_hex_mapping[hydro_hex_mapping['index_right'] == hex_index]['plant_index'].tolist()
+            if len(plants_in_hex) > 0:
+                hex_capacity_factor = capacity_factor.sel(plant=plants_in_hex)
+                plant_capacities = xr.DataArray(location_hydro.loc[plants_in_hex]['capacity'].values, dims=['plant'])
+                
+                weights = plant_capacities / plant_capacities.sum()
+                weighted_avg_capacity_factor = (hex_capacity_factor * weights).sum(dim='plant')
+                hydro_profile.loc[hex_index] = weighted_avg_capacity_factor
     
     return profile
 
