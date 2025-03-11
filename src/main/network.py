@@ -104,10 +104,10 @@ class Network:
         '''
         # Send the weather data to the model
         for gen, gen_list in self.generators.items():
-            self.n.generators_t.p_max_pu[gen] = gen_list[0]
+            self.n.generators_t.p_max_pu[gen.capitalize()] = gen_list[0]
 
             # specify maximum capacity based on land use
-            self.n.generators.loc[gen,'p_nom_max'] = gen_list[1] # same as above
+            self.n.generators.loc[gen.capitalize(),'p_nom_max'] = gen_list[1] # same as above
 
             # specify technology-specific and country-specific WACC and lifetime here
             ##### need hydro to be put into the country file as written below

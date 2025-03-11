@@ -17,6 +17,9 @@ import numpy as np
 import pandas as pd
 import pyomo.environ as pm
 from network import Network
+import xarray as xr
+from scipy.constants import physical_constants
+
 ########################################### HYRDOPOWER FUNCTIONS ########################################
 def hydropower_potential(eta,flowrate,head):
     '''
@@ -264,7 +267,7 @@ def get_h2_results(n, generators):
     generator_capacities = {}
     lc = n.objective/(n.loads_t.p_set.sum()[0]/39.4*1000) # convert back to kg H2
     for generator in generators:
-            generator_capacities[generator] = n.generators.p_nom_opt[f"{generator}"]
+            generator_capacities[generator] = n.generators.p_nom_opt[generator.capitalize()]
     electrolyzer_capacity = n.links.p_nom_opt['Electrolysis']
     battery_capacity = n.storage_units.p_nom_opt['Battery']
     h2_storage = n.stores.e_nom_opt['Compressed H2 Store']
@@ -300,7 +303,7 @@ def get_nh3_results(n, generators):
     lc = n.objective / ((n.loads_t.p_set['Ammonia demand'] * n.snapshot_weightings[
         'objective']).sum() / 6.25 * 1000)  # convert back to kg NH3
     for generator in generators:
-            generator_capacities[generator] = n.generators.p_nom_opt[generator]
+            generator_capacities[generator] = n.generators.p_nom_opt[generator.capitalize()]
     electrolyzer_capacity = n.links.p_nom_opt['Electrolysis']
     battery_capacity = n.stores.e_nom_opt['Battery']
     h2_storage = n.stores.e_nom_opt['CompressedH2Store']
@@ -403,66 +406,66 @@ if __name__ == "__main__":
     freq = str(snakemake.config['freq'])
     
     #################################### HYRDOPOWER MAIN-CODE SECTION ############################################
-    location_hydro = gpd.read_file('Data/hydropower_dams.gpkg')
-    location_hydro.rename(columns={'Latitude': 'lat', 'Longitude': 'lon'}, inplace=True)
-    location_hydro.rename(columns={'head_example':'head'},inplace=True)
-    
-    laos_hydrobasins = gpd.read_file('Hydrobasins/hybas_as_lev10_v1c.shp')
-    laos_hydrobasins['lat'] = location_hydro.geometry.y
-    laos_hydrobasins['lon'] = location_hydro.geometry.x
-    
-    runoff = cutout.hydro(
-        plants=location_hydro,
-        hydrobasins= laos_hydrobasins,
-        per_unit=True                    # Normalize output per unit area
-    )
-    
-    eta = 0.75 # efficiency of hydropower plant
+    if "hydro" in generators.keys():
+        location_hydro = gpd.read_file('data/hydropower_dams.gpkg')
+        location_hydro.rename(columns={'Latitude': 'lat', 'Longitude': 'lon'}, inplace=True)
+        location_hydro.rename(columns={'head_example':'head'},inplace=True)
+        laos_hydrobasins = gpd.read_file('data/hybas_as_lev10_v1c.shp')
+        laos_hydrobasins['lat'] = location_hydro.geometry.y
+        laos_hydrobasins['lon'] = location_hydro.geometry.x
+        
+        runoff = cutout.hydro(
+            plants=location_hydro,
+            hydrobasins= laos_hydrobasins,
+            per_unit=True                    # Normalize output per unit area
+        )
+        
+        eta = 0.75 # efficiency of hydropower plant
 
-    capacity_factor = xr.apply_ufunc(
-        hydropower_potential_with_capacity,
-        runoff,
-        xr.DataArray(location_hydro['head'].values, dims=['plant']),
-        xr.DataArray(location_hydro['capacity'].values, dims=['plant']),
-        eta,
-        vectorize=True,
-        dask='parallelized',  # Dask for parallel computation
-        output_dtypes=[float]
-    )
-    
-    location_hydro['geometry'] = gpd.points_from_xy(location_hydro.lon, location_hydro.lat)
+        capacity_factor = xr.apply_ufunc(
+            hydropower_potential_with_capacity,
+            runoff,
+            xr.DataArray(location_hydro['head'].values, dims=['plant']),
+            xr.DataArray(location_hydro['capacity'].values, dims=['plant']),
+            eta,
+            vectorize=True,
+            dask='parallelized',  # Dask for parallel computation
+            output_dtypes=[float]
+        )
+        
+        location_hydro['geometry'] = gpd.points_from_xy(location_hydro.lon, location_hydro.lat)
 
 
-    # Rename existing 'index_left' and 'index_right' columns if they exist
-    if 'index_left' in location_hydro.columns:
-        location_hydro = location_hydro.rename(columns={'index_left': 'index_left_renamed'})
-    if 'index_right' in location_hydro.columns:
-        location_hydro = location_hydro.rename(columns={'index_right': 'index_right_renamed'})
-    if 'index_left' in hexagons.columns:
-        hexagons = hexagons.rename(columns={'index_left': 'index_left_renamed'})
-    if 'index_right' in hexagons.columns:
-        hexagons = hexagons.rename(columns={'index_right': 'index_right_renamed'})
+        # Rename existing 'index_left' and 'index_right' columns if they exist
+        if 'index_left' in location_hydro.columns:
+            location_hydro = location_hydro.rename(columns={'index_left': 'index_left_renamed'})
+        if 'index_right' in location_hydro.columns:
+            location_hydro = location_hydro.rename(columns={'index_right': 'index_right_renamed'})
+        if 'index_left' in hexagons.columns:
+            hexagons = hexagons.rename(columns={'index_left': 'index_left_renamed'})
+        if 'index_right' in hexagons.columns:
+            hexagons = hexagons.rename(columns={'index_right': 'index_right_renamed'})
 
-    hydro_hex_mapping = gpd.sjoin(location_hydro, hexagons, how='left', predicate='within')
-    hydro_hex_mapping['plant_index'] = hydro_hex_mapping.index
-    num_hexagons = len(hexagons)
-    num_time_steps = len(capacity_factor.time)
+        hydro_hex_mapping = gpd.sjoin(location_hydro, hexagons, how='left', predicate='within')
+        hydro_hex_mapping['plant_index'] = hydro_hex_mapping.index
+        num_hexagons = len(hexagons)
+        num_time_steps = len(capacity_factor.time)
 
-    hydro_profile = xr.DataArray(
-        data=np.zeros((num_hexagons, num_time_steps)),
-        dims=['hexagon', 'time'],
-        coords={'hexagon': np.arange(num_hexagons), 'time': capacity_factor.time}
-    )
+        hydro_profile = xr.DataArray(
+            data=np.zeros((num_hexagons, num_time_steps)),
+            dims=['hexagon', 'time'],
+            coords={'hexagon': np.arange(num_hexagons), 'time': capacity_factor.time}
+        )
 
-    for hex_index in range(num_hexagons):
-        plants_in_hex = hydro_hex_mapping[hydro_hex_mapping['index_right'] == hex_index]['plant_index'].tolist()
-        if len(plants_in_hex) > 0:
-            hex_capacity_factor = capacity_factor.sel(plant=plants_in_hex)
-            plant_capacities = xr.DataArray(location_hydro.loc[plants_in_hex]['Total capacity (MW)'].values, dims=['plant'])
+        for hex_index in range(num_hexagons):
+            plants_in_hex = hydro_hex_mapping[hydro_hex_mapping['index_right'] == hex_index]['plant_index'].tolist()
+            if len(plants_in_hex) > 0:
+                hex_capacity_factor = capacity_factor.sel(plant=plants_in_hex)
+                plant_capacities = xr.DataArray(location_hydro.loc[plants_in_hex]['Total capacity (MW)'].values, dims=['plant'])
 
-            weights = plant_capacities / plant_capacities.sum()
-            weighted_avg_capacity_factor = (hex_capacity_factor * weights).sum(dim='plant')
-            hydro_profile.loc[hex_index] = weighted_avg_capacity_factor
+                weights = plant_capacities / plant_capacities.sum()
+                weighted_avg_capacity_factor = (hex_capacity_factor * weights).sum(dim='plant')
+                hydro_profile.loc[hex_index] = weighted_avg_capacity_factor
     #########################################################################################################
 
 

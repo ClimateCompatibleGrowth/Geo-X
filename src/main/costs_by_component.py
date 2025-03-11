@@ -55,7 +55,7 @@ for demand_center in demand_centers:
     lon = demand_parameters.loc[demand_center, 'Lon [deg]']
     coordinates = str(lat) + ", " + str(lon)
     # Get country where the demand center is
-    geolocator = Photon(user_agent="MyApp")
+    geolocator = Photon(user_agent="MyApp", timeout=50)
     location = geolocator.reverse(coordinates, language="en")
     country = location.raw['properties']['country']
     
@@ -102,15 +102,15 @@ for demand_center in demand_centers:
         # Work out CRF, then work out the cost for each generator using the data for the country you are looking at
         # Generators
         for generator in generators.keys():
-            generator_lower = generator.lower()
-            interest_generator = country_parameters.loc[country, f'{generator} interest rate']
-            lifetime_generator = country_parameters.loc[country, f'{generator} lifetime (years)']
+            generator_capitalized = generator.capitalize()
+            interest_generator = country_parameters.loc[country, f'{generator_capitalized} interest rate']
+            lifetime_generator = country_parameters.loc[country, f'{generator_capitalized} lifetime (years)']
             crf_generator = CRF(interest_generator, lifetime_generator)
-            capital_cost_generator = generators_parameters.loc[f'{generator}', 'capital_cost']
-            hexagons[f'{demand_center} {transport_method} {generator_lower} costs'] = \
-                hexagons[f'{demand_center} {transport_method} {generator_lower} capacity'] * capital_cost_generator * crf_generator
-            hexagons[f'{demand_center} LC - {transport_method} {generator_lower} portion'] = \
-                hexagons[f'{demand_center} {transport_method} {generator_lower} costs']/ \
+            capital_cost_generator = generators_parameters.loc[f'{generator_capitalized}', 'capital_cost']
+            hexagons[f'{demand_center} {transport_method} {generator} costs'] = \
+                hexagons[f'{demand_center} {transport_method} {generator} capacity'] * capital_cost_generator * crf_generator
+            hexagons[f'{demand_center} LC - {transport_method} {generator} portion'] = \
+                hexagons[f'{demand_center} {transport_method} {generator} costs']/ \
                     demand_parameters.loc[demand_center, 'Annual demand [kg/a]']
 
 print("\nCalculations complete.\n")
