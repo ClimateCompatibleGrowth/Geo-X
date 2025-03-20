@@ -25,7 +25,8 @@ def CRF(interest,lifetime):
     
     return CRF
 
-def calculate_trucking_costs(transport_state, distance, quantity, interest, transport_params_filepath):
+def calculate_trucking_costs(transport_state, distance, quantity, interest, 
+                             transport_params_filepath, currency):
     '''
     Calculates the annual cost of transporting hydrogen by truck.
 
@@ -56,17 +57,17 @@ def calculate_trucking_costs(transport_state, distance, quantity, interest, tran
 
     average_truck_speed = transport_params['Average truck speed (km/h)']
     working_hours = transport_params['Working hours (h/day)']
-    diesel_price = transport_params['Diesel price (euros/L)']
-    costs_for_driver = transport_params['Costs for driver (euros/h)']
+    diesel_price = transport_params[f'Diesel price ({currency}/L)']
+    costs_for_driver = transport_params[f'Costs for driver ({currency}/h)']
     working_days = transport_params['Working days (per year)']
     max_driving_dist = transport_params['Max driving distance (km/a)']
 
-    spec_capex_truck = transport_params['Spec capex truck (euros)']
+    spec_capex_truck = transport_params[f'Spec capex truck ({currency})']
     spec_opex_truck = transport_params['Spec opex truck (% of capex/a)']
     diesel_consumption = transport_params['Diesel consumption (L/100 km)']
     truck_lifetime = transport_params['Truck lifetime (a)']
 
-    spec_capex_trailor = transport_params['Spec capex trailer (euros)']
+    spec_capex_trailor = transport_params[f'Spec capex trailer ({currency})']
     spec_opex_trailor =transport_params['Spec opex trailer (% of capex/a)']
     net_capacity = transport_params['Net capacity (kg of commodity)']
     trailor_lifetime = transport_params['Trailer lifetime (a)']
@@ -115,7 +116,7 @@ def calculate_trucking_costs(transport_state, distance, quantity, interest, tran
 
 
 def h2_conversion_stand(final_state, quantity, electricity_costs, heat_costs, interest,
-                        conversion_params_filepath):
+                        conversion_params_filepath, currency):
     # Leader to go through and add comments to further explain the uses of load and unload and standard condition
     '''
     Calculates the annual cost and electricity and heating demand for converting 
@@ -147,7 +148,6 @@ def h2_conversion_stand(final_state, quantity, electricity_costs, heat_costs, in
         annual hydrogen conversion costs.
 
     '''
-    
     daily_throughput = quantity/365
     
     if final_state == 'standard condition':
@@ -168,7 +168,7 @@ def h2_conversion_stand(final_state, quantity, electricity_costs, heat_costs, in
             n_isentrop = conversion_params['Isentropic efficiency']
                         
             compressor_lifetime = conversion_params['Compressor lifetime (a)']
-            capex_coef = conversion_params['Compressor capex coefficient (euros per kilograms H2 per day)']
+            capex_coef = conversion_params[f'Compressor capex coefficient ({currency} per kilograms H2 per day)']
             opex_compressor = conversion_params['Compressor opex (% capex)']
             # I don't know what the 500 means - we should probably just assign that to a variable that's named
             # I can look up what it is but like for readability
@@ -188,9 +188,9 @@ def h2_conversion_stand(final_state, quantity, electricity_costs, heat_costs, in
             
         elif final_state == 'LH2':
             electricity_unit_demand = conversion_params['Electricity demand (kWh per kg H2)']
-            capex_quadratic_coef = conversion_params['Capex quadratic coefficient (euros (kg H2)-2)']
-            capex_linear_coef = conversion_params['Capex linear coefficient (euros per kg H2)']
-            capex_constant = conversion_params['Capex constant (euros)']
+            capex_quadratic_coef = conversion_params[f'Capex quadratic coefficient ({currency} (kg H2)-2)']
+            capex_linear_coef = conversion_params[f'Capex linear coefficient ({currency} per kg H2)']
+            capex_constant = conversion_params[f'Capex constant ({currency})']
             opex_liquid_plant = conversion_params['Opex (% of capex)']
             liquid_plant_lifetime = conversion_params['Plant lifetime (a)']
             
@@ -211,10 +211,10 @@ def h2_conversion_stand(final_state, quantity, electricity_costs, heat_costs, in
             # In this conversion you "load" the hydrogen molecule to a carrier liquid.
             electricity_unit_demand = conversion_params['Electricity demand (kWh per kg H2)']
             heat_unit_demand = conversion_params['Heat demand (kWh per kg H2)']
-            capex_coef = conversion_params['Capex coefficient (euros per kilograms H2 per year)']
+            capex_coef = conversion_params[f'Capex coefficient ({currency} per kilograms H2 per year)']
             opex_hydrogenation = conversion_params['Opex (% of capex)']
             hydrogenation_lifetime = conversion_params['Hydrogenation lifetime (a)']
-            costs_carrier = conversion_params['Carrier costs (euros per kg carrier)']
+            costs_carrier = conversion_params[f'Carrier costs ({currency} per kg carrier)']
             ratio_carrier = conversion_params['Carrier ratio (kg carrier: kg hydrogen)']
             
             elec_demand = electricity_unit_demand * quantity 
@@ -233,7 +233,7 @@ def h2_conversion_stand(final_state, quantity, electricity_costs, heat_costs, in
         elif final_state == 'LOHC_unload':
             electricity_unit_demand = conversion_params['Electricity demand (kWh per kg H2)']
             heat_unit_demand = conversion_params['Heat demand (kWh per kg H2)']
-            capex_coef = conversion_params['Capex coefficient (euros per kilograms H2 per year)']
+            capex_coef = conversion_params[f'Capex coefficient ({currency} per kilograms H2 per year)']
             opex_dehydrogenation = conversion_params['Opex (% of capex)']
             dehydrogenation_lifetime = conversion_params['Hydrogenation lifetime (a)']
             
@@ -251,7 +251,7 @@ def h2_conversion_stand(final_state, quantity, electricity_costs, heat_costs, in
         elif final_state == 'NH3_load':
             electricity_unit_demand = conversion_params['Electricity demand (kWh per kg H2)']
             heat_unit_demand = conversion_params['Heat demand (kWh per kg H2)']
-            capex_coefficient = conversion_params['Capex coefficient (euros per annual g H2)']
+            capex_coefficient = conversion_params[f'Capex coefficient ({currency} per annual g H2)']
             opex_NH3_plant = conversion_params['Opex (% of capex)']
             NH3_plant_lifetime = conversion_params['Plant lifetime (a)']
             
@@ -269,7 +269,7 @@ def h2_conversion_stand(final_state, quantity, electricity_costs, heat_costs, in
         elif final_state == 'NH3_unload':
             electricity_unit_demand = conversion_params['Electricity demand (kWh per kg H2)']
             heat_unit_demand = conversion_params['Heat demand (kWh per kg H2)']
-            capex_coefficient = conversion_params['Capex coefficient (euros per hourly g H2)']
+            capex_coefficient = conversion_params[f'Capex coefficient ({currency} per hourly g H2)']
             opex_NH3_plant = conversion_params['Opex (% of capex)']
             NH3_plant_lifetime = conversion_params['Plant lifetime (a)']
             
@@ -293,7 +293,8 @@ def h2_conversion_stand(final_state, quantity, electricity_costs, heat_costs, in
 
 def cheapest_trucking_strategy(final_state, quantity, distance, 
                                 elec_costs, heat_costs, interest,
-                                conversion_params_filepath, transport_params_filepath):
+                                conversion_params_filepath, transport_params_filepath,
+                                currency):
     # Leader to go through and add comments
     '''
     Calculates the lowest-cost state to transport hydrogen by truck
@@ -329,46 +330,46 @@ def cheapest_trucking_strategy(final_state, quantity, distance,
     # I am confused by this entire function to be honest. Struggling to follow the logic
     # Different between _load and _unload is fuzzy
     if final_state == '500 bar':
-        dist_costs_500bar = h2_conversion_stand('500 bar', quantity, elec_costs, heat_costs, interest, conversion_params_filepath)[2] +\
-                calculate_trucking_costs('500 bar', distance, quantity, interest, transport_params_filepath)
+        dist_costs_500bar = h2_conversion_stand('500 bar', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
+                calculate_trucking_costs('500 bar', distance, quantity, interest, transport_params_filepath, currency)
     elif final_state == 'NH3':
-        dist_costs_500bar = h2_conversion_stand('500 bar', quantity, elec_costs, heat_costs, interest, conversion_params_filepath)[2] +\
-                calculate_trucking_costs('500 bar',distance,quantity,interest,transport_params_filepath) +\
-                    h2_conversion_stand(final_state+'_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath)[2]
+        dist_costs_500bar = h2_conversion_stand('500 bar', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
+                calculate_trucking_costs('500 bar',distance,quantity,interest,transport_params_filepath, currency) +\
+                    h2_conversion_stand(final_state+'_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
     else:  
-        dist_costs_500bar = h2_conversion_stand('500 bar', quantity, elec_costs, heat_costs, interest, conversion_params_filepath)[2] +\
-                calculate_trucking_costs('500 bar',distance,quantity,interest,transport_params_filepath) +\
-                    h2_conversion_stand(final_state, quantity, elec_costs, heat_costs, interest, conversion_params_filepath)[2]
+        dist_costs_500bar = h2_conversion_stand('500 bar', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
+                calculate_trucking_costs('500 bar',distance,quantity,interest,transport_params_filepath, currency) +\
+                    h2_conversion_stand(final_state, quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
     
     if final_state == 'LH2':
-        dist_costs_lh2 = h2_conversion_stand('LH2', quantity, elec_costs, heat_costs, interest, conversion_params_filepath)[2] +\
-                calculate_trucking_costs('LH2',distance, quantity,interest,transport_params_filepath)
+        dist_costs_lh2 = h2_conversion_stand('LH2', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
+                calculate_trucking_costs('LH2',distance, quantity,interest,transport_params_filepath, currency)
     elif final_state == 'NH3':
         # Should these ones be LH2 in first two lines???
-        dist_costs_lh2 = h2_conversion_stand('500 bar', quantity, elec_costs, heat_costs, interest, conversion_params_filepath)[2] +\
-                calculate_trucking_costs('500 bar',distance,quantity,interest,transport_params_filepath) +\
-                    h2_conversion_stand(final_state+'_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath)[2]
+        dist_costs_lh2 = h2_conversion_stand('500 bar', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
+                calculate_trucking_costs('500 bar',distance,quantity,interest,transport_params_filepath, currency) +\
+                    h2_conversion_stand(final_state+'_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
     else:
-        dist_costs_lh2 = h2_conversion_stand('LH2', quantity, elec_costs, heat_costs, interest, conversion_params_filepath)[2] +\
-                calculate_trucking_costs('LH2',distance, quantity,interest,transport_params_filepath) +\
-                    h2_conversion_stand(final_state, quantity, elec_costs, heat_costs, interest, conversion_params_filepath)[2]
+        dist_costs_lh2 = h2_conversion_stand('LH2', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
+                calculate_trucking_costs('LH2',distance, quantity,interest,transport_params_filepath, currency) +\
+                    h2_conversion_stand(final_state, quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
     
     if final_state == 'NH3':
-        dist_costs_nh3 = h2_conversion_stand('NH3_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath)[2] +\
-                calculate_trucking_costs('NH3',distance, quantity, interest,transport_params_filepath)
-        dist_costs_lohc = h2_conversion_stand('LOHC_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath)[2] +\
-                calculate_trucking_costs('LOHC',distance, quantity, interest,transport_params_filepath) +\
-                    h2_conversion_stand('LOHC_unload', quantity, elec_costs, heat_costs, interest, conversion_params_filepath)[2] +\
-                        h2_conversion_stand('NH3_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath)[2]
+        dist_costs_nh3 = h2_conversion_stand('NH3_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
+                calculate_trucking_costs('NH3',distance, quantity, interest,transport_params_filepath, currency)
+        dist_costs_lohc = h2_conversion_stand('LOHC_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
+                calculate_trucking_costs('LOHC',distance, quantity, interest,transport_params_filepath, currency) +\
+                    h2_conversion_stand('LOHC_unload', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
+                        h2_conversion_stand('NH3_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
     else:
-        dist_costs_nh3 = h2_conversion_stand('NH3_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath)[2] +\
-                calculate_trucking_costs('NH3',distance, quantity,interest,transport_params_filepath) +\
-                    h2_conversion_stand('NH3_unload', quantity, elec_costs, heat_costs, interest, conversion_params_filepath)[2] +\
-                        h2_conversion_stand(final_state, quantity, elec_costs, heat_costs, interest, conversion_params_filepath)[2]
-        dist_costs_lohc = h2_conversion_stand('LOHC_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath)[2] +\
-                calculate_trucking_costs('LOHC',distance, quantity,interest,transport_params_filepath) +\
-                    h2_conversion_stand('LOHC_unload', quantity, elec_costs, heat_costs, interest, conversion_params_filepath)[2] +\
-                        h2_conversion_stand(final_state, quantity, elec_costs, heat_costs, interest, conversion_params_filepath)[2]
+        dist_costs_nh3 = h2_conversion_stand('NH3_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
+                calculate_trucking_costs('NH3',distance, quantity,interest,transport_params_filepath, currency) +\
+                    h2_conversion_stand('NH3_unload', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
+                        h2_conversion_stand(final_state, quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
+        dist_costs_lohc = h2_conversion_stand('LOHC_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
+                calculate_trucking_costs('LOHC',distance, quantity,interest,transport_params_filepath, currency) +\
+                    h2_conversion_stand('LOHC_unload', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
+                        h2_conversion_stand(final_state, quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
 
     lowest_cost = np.nanmin([dist_costs_500bar, dist_costs_lh2, dist_costs_lohc, dist_costs_nh3])
     
@@ -392,6 +393,7 @@ def cheapest_pipeline_strategy(final_state, quantity, distance,
                                 elec_costs, heat_costs,interest, 
                                 conversion_params_filepath,
                                 pipeline_params_filepath,
+                                currency,
                                 elec_cost_grid = 0.):
     # Leader to go through and add comments
     '''
@@ -427,20 +429,21 @@ def cheapest_pipeline_strategy(final_state, quantity, distance,
 
     '''
     if final_state == 'NH3':
-        dist_costs_pipeline = pipeline_costs(distance,quantity, elec_cost_grid, pipeline_params_filepath, interest)[0] +\
-                h2_conversion_stand(final_state+'_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath)[2]  
+        dist_costs_pipeline = pipeline_costs(distance,quantity, elec_cost_grid, pipeline_params_filepath, interest, currency)[0] +\
+                h2_conversion_stand(final_state+'_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]  
     else:
-        dist_costs_pipeline = pipeline_costs(distance, quantity, elec_cost_grid, pipeline_params_filepath, interest)[0] +\
-                h2_conversion_stand(final_state, quantity, elec_costs, heat_costs, interest, conversion_params_filepath)[2]
+        dist_costs_pipeline = pipeline_costs(distance, quantity, elec_cost_grid, pipeline_params_filepath, interest, currency)[0] +\
+                h2_conversion_stand(final_state, quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
 
     costs_per_unit = dist_costs_pipeline/quantity
-    cheapest_option = pipeline_costs(distance, quantity, elec_cost_grid, pipeline_params_filepath, interest)[1] 
+    cheapest_option = pipeline_costs(distance, quantity, elec_cost_grid, pipeline_params_filepath, interest, currency)[1] 
 
     return costs_per_unit, cheapest_option
 
 
 # Only new pipelines
-def pipeline_costs(distance, quantity, elec_cost, pipeline_params_filepath, interest):
+def pipeline_costs(distance, quantity, elec_cost, pipeline_params_filepath, 
+                   interest, currency):
     '''
     Calculates the annualized cost of building a pipeline.
 
@@ -499,8 +502,8 @@ def pipeline_costs(distance, quantity, elec_cost, pipeline_params_filepath, inte
                                    sheet_name=pipeline_type,
                                     index_col = 'Parameter'
                                     ).squeeze('columns')
-    capex_pipeline = pipeline_parameters['Pipeline capex (euros)']
-    capex_compressor = pipeline_parameters['Compressor capex (euros)']
+    capex_pipeline = pipeline_parameters[f'Pipeline capex ({currency})']
+    capex_compressor = pipeline_parameters[f'Compressor capex ({currency})']
     
     capex_annual = ((capex_pipeline * distance) *
                         CRF(interest, lifetime_pipeline)) +\
@@ -514,7 +517,8 @@ def pipeline_costs(distance, quantity, elec_cost, pipeline_params_filepath, inte
     return annual_costs, f"{pipeline_type} Pipeline"
 
 #Only new pipelines
-def calculate_nh3_pipeline_costs(distance, quantity, elec_cost, pipeline_params_filepath, interest):
+def calculate_nh3_pipeline_costs(distance, quantity, elec_cost, 
+                                 pipeline_params_filepath, interest, currency):
     '''
     calculates the annualized cost of building a pipeline.
 
@@ -575,9 +579,9 @@ def calculate_nh3_pipeline_costs(distance, quantity, elec_cost, pipeline_params_
                                    sheet_name=pipeline_type,
                                     index_col = 'Parameter'
                                     ).squeeze('columns')
-    y_int = pipeline_parameters['Capex y-intercept (€/t/yr/100km)']
+    y_int = pipeline_parameters[f'Capex y-intercept ({currency}/t/yr/100km)']
     print(y_int)
-    slope = pipeline_parameters['Capex flow coefficient (€/t^2/yr^2/100km)']
+    slope = pipeline_parameters[f'Capex flow coefficient ({currency}/t^2/yr^2/100km)']
     print(slope)
     capex_coeff = (y_int + slope*quantity_per_pipeline)
     print(capex_coeff)

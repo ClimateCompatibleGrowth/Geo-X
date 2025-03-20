@@ -16,35 +16,12 @@ import logging
 import numpy as np
 import pandas as pd
 import pyomo.environ as pm
-from network import Network
-import xarray as xr
 from scipy.constants import physical_constants
+import xarray as xr
+
+from network import Network
 
 ########################################### HYRDOPOWER FUNCTIONS ########################################
-def hydropower_potential(eta,flowrate,head):
-    '''
-    Calculate hydropower potential in Megawatts
-
-    Parameters
-    ----------
-    eta : float
-        Efficiency of the hydropower plant.
-    flowrate : float
-        Flowrate calculated with runoff multiplied by the hydro-basin area, in cubic meters per hour.
-    head : float
-        Height difference at the hydropower site, in meters.
-
-    Returns
-    -------
-    float
-        Hydropower potential in Megawatts (MW).
-    '''
-    rho = 997 # kg/m3; Density of water
-    g = physical_constants['standard acceleration of gravity'][0] # m/s2; Based on the CODATA constants 2018
-    Q = (flowrate/(1000/24)) / 3600 # transform flowrate per h into flowrate per second
-    # If Atlite is updated to 0.4.0 the term (1000/24) can be removed
-    return (eta * rho * g * Q * head) / (1000 * 1000) # MW
-
 def hydropower_potential_with_capacity(flowrate, head, capacity, eta):
     '''
     Calculate the hydropower potential considering the capacity limit
@@ -65,7 +42,11 @@ def hydropower_potential_with_capacity(flowrate, head, capacity, eta):
     xarray DataArray
         Capacity factor, which is the limited potential divided by the capacity.
     '''
-    potential = hydropower_potential(flowrate, head, eta)
+    rho = 997 # kg/m3; Density of water
+    g = physical_constants['standard acceleration of gravity'][0] # m/s2; Based on the CODATA constants 2018
+    Q = (flowrate/(1000/24)) / 3600 # transform flowrate per h into flowrate per second
+    # If Atlite is updated to 0.4.0 the term (1000/24) can be removed
+    potential = (eta * rho * g * Q * head) / (1000 * 1000) # MW
     limited_potential = xr.where(potential > capacity, capacity, potential)
     capacity_factor = limited_potential / capacity
     return capacity_factor
@@ -407,16 +388,14 @@ if __name__ == "__main__":
     
     #################################### HYRDOPOWER MAIN-CODE SECTION ############################################
     if "hydro" in generators.keys():
-        location_hydro = gpd.read_file('data/hydropower_dams.gpkg')
-        location_hydro.rename(columns={'Latitude': 'lat', 'Longitude': 'lon'}, inplace=True)
-        location_hydro.rename(columns={'head_example':'head'},inplace=True)
-        laos_hydrobasins = gpd.read_file('data/hybas_as_lev10_v1c.shp')
-        laos_hydrobasins['lat'] = location_hydro.geometry.y
-        laos_hydrobasins['lon'] = location_hydro.geometry.x
+        location_hydro = gpd.read_file('data/hydro/hydropower_dams.gpkg')
+        hydrobasins = gpd.read_file('data/hydro/hybas_lev10_v1c.shp')
+        hydrobasins['lat'] = location_hydro.geometry.y
+        hydrobasins['lon'] = location_hydro.geometry.x
         
         runoff = cutout.hydro(
             plants=location_hydro,
-            hydrobasins= laos_hydrobasins,
+            hydrobasins= hydrobasins,
             per_unit=True                    # Normalize output per unit area
         )
         
@@ -432,22 +411,8 @@ if __name__ == "__main__":
             dask='parallelized',  # Dask for parallel computation
             output_dtypes=[float]
         )
-        
-        location_hydro['geometry'] = gpd.points_from_xy(location_hydro.lon, location_hydro.lat)
-
-
-        # Rename existing 'index_left' and 'index_right' columns if they exist
-        if 'index_left' in location_hydro.columns:
-            location_hydro = location_hydro.rename(columns={'index_left': 'index_left_renamed'})
-        if 'index_right' in location_hydro.columns:
-            location_hydro = location_hydro.rename(columns={'index_right': 'index_right_renamed'})
-        if 'index_left' in hexagons.columns:
-            hexagons = hexagons.rename(columns={'index_left': 'index_left_renamed'})
-        if 'index_right' in hexagons.columns:
-            hexagons = hexagons.rename(columns={'index_right': 'index_right_renamed'})
 
         hydro_hex_mapping = gpd.sjoin(location_hydro, hexagons, how='left', predicate='within')
-        hydro_hex_mapping['plant_index'] = hydro_hex_mapping.index
         num_hexagons = len(hexagons)
         num_time_steps = len(capacity_factor.time)
 
@@ -458,10 +423,10 @@ if __name__ == "__main__":
         )
 
         for hex_index in range(num_hexagons):
-            plants_in_hex = hydro_hex_mapping[hydro_hex_mapping['index_right'] == hex_index]['plant_index'].tolist()
+            plants_in_hex = hydro_hex_mapping[hydro_hex_mapping['index_right'] == hex_index].index.tolist()
             if len(plants_in_hex) > 0:
                 hex_capacity_factor = capacity_factor.sel(plant=plants_in_hex)
-                plant_capacities = xr.DataArray(location_hydro.loc[plants_in_hex]['Total capacity (MW)'].values, dims=['plant'])
+                plant_capacities = xr.DataArray(location_hydro.loc[plants_in_hex]['capacity'].values, dims=['plant'])
 
                 weights = plant_capacities / plant_capacities.sum()
                 weighted_avg_capacity_factor = (hex_capacity_factor * weights).sum(dim='plant')

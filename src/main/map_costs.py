@@ -67,6 +67,7 @@ def plot_and_save(crs, hexagons, name, legend_kwds, output_folder, figsize=(10,5
     plt.close()
 
 if __name__ == "__main__":
+    currency = snakemake.config["currency"]
     plant_type = str(snakemake.wildcards.plant_type)
     hexagons = gpd.read_file(str(snakemake.input.hexagons))
     demand_excel_path = str(snakemake.input.demand_parameters)
@@ -93,12 +94,12 @@ if __name__ == "__main__":
         print(f"\nPlotting for {demand_center} begins...")
         # plot lowest LC in each location
         plot_and_save(crs, hexagons, f'{demand_center} lowest cost', 
-                    {'label':'LC [euros/kg]'}, output_folder)
+                    {'label':f'LC [{currency}/kg]'}, output_folder)
 
         
         for transport_method in transport_methods:
             plot_and_save(crs, hexagons, f'{demand_center} {transport_method} production cost',
-                        {'label':'Production LC [euros/kg]'}, output_folder)
+                        {'label':f'Production LC [{currency}/kg]'}, output_folder)
 
             #%% plot transportation costs
             if plant_type == "hydrogen":
@@ -108,10 +109,10 @@ if __name__ == "__main__":
                             hexagons[f'{demand_center} road construction costs']
                     
                     plot_and_save(crs, hexagons, f'{demand_center} total {transport_method} costs', 
-                        {'label':f'{transport_method} cost [euros/kg]'}, output_folder)
+                        {'label':f'{transport_method} cost [{currency}/kg]'}, output_folder)
                 elif transport_method == "pipeline":
                     plot_and_save(crs, hexagons, f'{demand_center} {transport_method} transport and conversion costs', 
-                                {'label':f'{transport_method} cost [euros/kg]'}, output_folder)
+                                {'label':f'{transport_method} cost [{currency}/kg]'}, output_folder)
             elif plant_type == "ammonia":
                 if transport_method == "trucking":
                     hexagons[f'{demand_center} total {transport_method} costs'] =\
@@ -119,16 +120,16 @@ if __name__ == "__main__":
                             hexagons[f'{demand_center} road construction costs']
             
                     plot_and_save(crs, hexagons, f'{demand_center} total {transport_method} costs', 
-                                {'label':f'{transport_method} cost [euros/kg]'}, output_folder)
+                                {'label':f'{transport_method} cost [{currency}/kg]'}, output_folder)
                 elif transport_method == "pipeline":
                     # -- the below doesn't work for ammonia pipeline as it's null. Might need to change nulls to zero 
                     plot_and_save(crs, hexagons, f'{demand_center} {transport_method} transport costs', 
-                                {'label':f'{transport_method} cost [euros/kg]'}, output_folder)
+                                {'label':f'{transport_method} cost [{currency}/kg]'}, output_folder)
 
             # %% plot total costs
             # -- the below doesn't work for ammonia pipeline as it's null. Might need to change nulls to zero 
             plot_and_save(crs, hexagons, f'{demand_center} {transport_method} total cost',
-                        {'label':'LC [euros/kg]'}, output_folder)
+                        {'label':'LC [{currency}/kg]'}, output_folder)
 
             # Electrolyzer capacity
             plot_and_save(crs, hexagons, f'{demand_center} {transport_method} electrolyzer capacity',
@@ -167,12 +168,12 @@ if __name__ == "__main__":
         
     # %% plot water costs
     plot_and_save(crs, hexagons, 'Ocean water costs',
-                {'label':'Water cost [euros/kg H2]'}, output_folder)
+                {'label':'Water cost [{currency}/kg H2]'}, output_folder)
 
     plt.ticklabel_format(style='plain')
 
     plot_and_save(crs, hexagons, 'Freshwater costs',
-                {'label':'Water cost [euros/kg H2]'}, output_folder)
+                {'label':'Water cost [{currency}/kg H2]'}, output_folder)
 
     plt.ticklabel_format(style='plain')
 

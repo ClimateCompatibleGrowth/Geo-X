@@ -114,8 +114,9 @@ def main():
     road_opex = infra_data.at['Short road','OPEX']
 
     # Prices from the country excel file
-    elec_price = country_params['Electricity price (euros/kWh)'].iloc[0]
-    heat_price = country_params['Heat price (euros/kWh)'].iloc[0]
+    currency = str(snakemake.config["currency"])
+    elec_price = country_params[f'Electricity price ({currency}/kWh)'].iloc[0]
+    heat_price = country_params[f'Heat price ({currency}/kWh)'].iloc[0]
     plant_interest_rate = country_params['Plant interest rate'].iloc[0]
     infrastructure_interest_rate = country_params['Infrastructure interest rate'].iloc[0]
     infrastructure_lifetime = country_params['Infrastructure lifetime (years)'].iloc[0]
@@ -162,7 +163,8 @@ def main():
                                                 elec_price,
                                                 heat_price,
                                                 plant_interest_rate,
-                                                conversion_params_filepath
+                                                conversion_params_filepath,
+                                                currency
                                                 )[2]/annual_demand_quantity
                         trucking_states[i] = "None"
                         road_construction_costs[i] = 0.
@@ -172,7 +174,8 @@ def main():
                                                 elec_price,
                                                 heat_price,
                                                 plant_interest_rate,
-                                                conversion_params_filepath
+                                                conversion_params_filepath,
+                                                currency
                                                 )[2]/annual_demand_quantity
                         trucking_states[i] = "None"
                         road_construction_costs[i] = 0.
@@ -215,13 +218,15 @@ def main():
                                                         infrastructure_interest_rate,
                                                         conversion_params_filepath,
                                                         transport_params_filepath,
+                                                        currency
                                                         )
                     elif plant_type == "ammonia":
                         trucking_costs[i] = calculate_trucking_costs(demand_state,
                                                            dist_to_demand, 
                                                            annual_demand_quantity,
                                                            infrastructure_interest_rate, 
-                                                           transport_params_filepath)/annual_demand_quantity
+                                                           transport_params_filepath,
+                                                           currency)/annual_demand_quantity
                         trucking_states[i] = "NH3"
                 # Otherwise, if road construction not allowed
                 else:
@@ -239,13 +244,15 @@ def main():
                                                             infrastructure_interest_rate,
                                                             conversion_params_filepath,
                                                             transport_params_filepath,
+                                                            currency
                                                             )
                         elif plant_type == "ammonia":
                             trucking_costs[i] = calculate_trucking_costs(demand_state,
                                                            dist_to_demand, 
                                                            annual_demand_quantity,
                                                            infrastructure_interest_rate, 
-                                                           transport_params_filepath)/annual_demand_quantity
+                                                           transport_params_filepath,
+                                                           currency)/annual_demand_quantity
                             trucking_states[i] = "NH3"
                     # And if road construction is not allowed and distance to road is > 0, trucking states are nan
                     # -- Sam to confirm whether assigning nan will cause future issues in code
@@ -263,7 +270,8 @@ def main():
                                                     heat_price,
                                                     infrastructure_interest_rate,
                                                     conversion_params_filepath,
-                                                    pipeline_params_filepath,
+                                                    pipeline_params_filepath, 
+                                                    currency
                                                     )
                     elif plant_type == "ammonia":
                         pipeline_costs[i], pipeline_type =\
@@ -271,8 +279,8 @@ def main():
                                                         annual_demand_quantity,
                                                         elec_price,
                                                         pipeline_params_filepath,
-                                                        infrastructure_interest_rate
-                                                        )
+                                                        infrastructure_interest_rate,
+                                                        currency)
                 else:
                     pipeline_costs[i] = np.nan
 
