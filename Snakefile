@@ -29,6 +29,8 @@ rule run_weather:
 
 
 rule get_weather_data:
+    input:
+        hexagons = 'data/hex_final_{country}.geojson'
     output:
         'cutouts/{country}_{weather_year}.nc',
     script:

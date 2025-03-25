@@ -379,6 +379,15 @@ if __name__ == "__main__":
     # Get a uniform capacity layout for all grid cells. https://atlite.readthedocs.io/en/master/ref_api.html
     # Alycia to double-check we are using the right layout
     cutout_filepath = f'cutouts/{snakemake.wildcards.country}_{snakemake.wildcards.weather_year}.nc'
+
+    # Checking that the weather file is in the folder
+    try:
+        with open(cutout_filepath) as f:
+            print("Weather file found")
+    except FileNotFoundError as e:
+        e.strerror = "Weather file not found. Please run weather file rule or add weather file to cutouts folder. Missing file"
+        raise e
+    
     cutout = atlite.Cutout(cutout_filepath)
     layout = cutout.uniform_layout()
     profiles = []
@@ -397,7 +406,7 @@ if __name__ == "__main__":
             plants=location_hydro,
             hydrobasins= hydrobasins,
             per_unit=True                    # Normalize output per unit area
-        )
+        ).resample(time=freq).mean()
         
         eta = 0.75 # efficiency of hydropower plant
 
