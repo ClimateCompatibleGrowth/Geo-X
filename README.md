@@ -94,8 +94,8 @@ Once you have created a hexagon file with these features, save it in the `data` 
 ### Hydro-specific files (Optional)
 The hydro-specific files can be obtained by running the [Geo-X-data-prep](https://github.com/ClimateCompatibleGrowth/Geo-X-data-prep) repository and from the [HydroBASINS section of HydroSHEDS](https://www.hydrosheds.org/products/hydrobasins).
 
-Create a `hydro` folder inside the `data` folder and place the following files inside it. You may need to rename them to match these:
-- `hydropower_dams.gpkg`
+Create a `hydro` folder inside the `data` folder and place the following files inside it. You will need to rename them to match these:
+- `[COUNTRY ISO CODE]_hydropower_dams.gpkg`
 - `hybas_lev10_v1c.shp`
 
 > [!NOTE]

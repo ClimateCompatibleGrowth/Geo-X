@@ -92,7 +92,10 @@ if __name__ == "__main__":
                     demand_parameters.loc[demand_center, 'Annual demand [kg/a]']
     
             # H2 Storage
-            capital_cost_h2_storage = stores_parameters.loc['Compressed H2 Store', 'capital_cost']
+            if plant_type == "hydrogen":
+                capital_cost_h2_storage = stores_parameters.loc['Compressed H2 Store', 'capital_cost']
+            else:
+                capital_cost_h2_storage = stores_parameters.loc['CompressedH2Store', 'capital_cost']
             hexagons[f'{demand_center} {transport_method} H2 storage costs'] = \
                 hexagons[f'{demand_center} {transport_method} H2 storage capacity'] *\
                     capital_cost_h2_storage * crf_plant

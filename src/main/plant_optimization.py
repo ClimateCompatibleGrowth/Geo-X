@@ -277,7 +277,10 @@ def get_h2_results(n, generators):
             generator_capacities[generator] = n.generators.p_nom_opt[generator.capitalize()]
     electrolyzer_capacity = n.links.p_nom_opt['Electrolysis']
     battery_capacity = n.storage_units.p_nom_opt['Battery']
-    h2_storage = n.stores.e_nom_opt['Compressed H2 Store']
+    if plant_type == "hydrogen":
+        h2_storage = n.stores.e_nom_opt['Compressed H2 Store']
+    else:
+        h2_storage = n.stores.e_nom_opt['CompressedH2Store']
     
     return lc, generator_capacities, electrolyzer_capacity, battery_capacity, h2_storage
 
@@ -421,7 +424,7 @@ if __name__ == "__main__":
     
     # Creating hydropower generator profile
     if "hydro" in generators:
-        location_hydro = gpd.read_file('data/hydro/hydropower_dams.gpkg')
+        location_hydro = gpd.read_file(f'data/hydro/{snakemake.wildcards.country}_hydropower_dams.gpkg')
         hydrobasins = gpd.read_file('data/hydro/hybas_lev10_v1c.shp')
         hydrobasins['lat'] = location_hydro.geometry.y
         hydrobasins['lon'] = location_hydro.geometry.x
