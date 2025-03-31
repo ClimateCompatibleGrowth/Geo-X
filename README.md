@@ -42,11 +42,11 @@ First, clone the Geo-X repository using `git`.
 The python package requirements are in the `environment.yaml` file. 
 You can install these requirements in a new environment using the `mamba` package and environment manager (installation instructions [here](https://mamba.readthedocs.io/en/latest/installation/mamba-installation.html)): 
 
-` .../GEO-X % mamba env create -f environment.yaml`
+` .../geo-x % mamba env create -f environment.yaml`
 
 Then activate this new environment using:
 
-`.../GEO-X % mamba activate geox`
+`.../geo-x % mamba activate geox`
 
 ## 3) Get a Climate Data Store API key
 To simulate commodities which use renewable energy for production, historical climate data is needed as an input.
@@ -147,7 +147,9 @@ This repository uses [Snakemake](https://snakemake.readthedocs.io/en/stable/) to
 
 High-level workflow settings are controlled in the config file: `config.yaml`.
 
-**Wildcards:** These are used in the `scenario` section of the config file to specify the data used in the workflow.
+**Wildcards:** 
+
+These are used in the `scenario` section of the config file to specify the data used in the workflow.
 
 They can be changed to match the case you're analysing. They are: 
 - `country`: an ISO standard 2-letter abbreviation
@@ -155,6 +157,7 @@ They can be changed to match the case you're analysing. They are:
 - `plant_type`: the commodity to be produced (currently either "hydrogen" or "ammonia")
 
 **Weather data:**
+
 The amount of years you want to download weather data for should be added into `years_to_check`.
 
 For instance, if you want your weather data to start in 2015 and span five years, `weather_year` should be 2015 and `years_to_check` should be 5.
@@ -162,6 +165,7 @@ For instance, if you want your weather data to start in 2015 and span five years
 You can set the frequency of data to be used in optimisation using `freq` (i.e., "H" for hourly, "3H" for three-hourly, etc.)
 
 **Generators:**
+
 The types of renewable generators considered for plant construction are included in the `generators_dict` section. Currently, only Solar, Wind, and Hydro can be considered. Ensure that all the generators that you are considering are in the dictionary and remove any unnecessary ones.
 
 Dependent on which generators you are using, you can change the `panel` value for Solar and the `turbine` value for Wind.
@@ -169,6 +173,7 @@ Dependent on which generators you are using, you can change the `panel` value fo
 In the `gen_capacity` section, you will find `solar` and `wind` and `hydro`, which can be changed to match values that you are analysing.
 
 **Other:**
+
 You will have to set the `solver` to the solver name that you are going to be using. 
 
 You will also have to set whether a `water_limit` is `True` or `False` (i.e., whether you want to consider water scarcity in your process).
