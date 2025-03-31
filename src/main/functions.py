@@ -345,9 +345,8 @@ def cheapest_trucking_strategy(final_state, quantity, distance,
         dist_costs_lh2 = h2_conversion_stand('LH2', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
                 calculate_trucking_costs('LH2',distance, quantity,interest,transport_params_filepath, currency)
     elif final_state == 'NH3':
-        # Should these ones be LH2 in first two lines???
-        dist_costs_lh2 = h2_conversion_stand('500 bar', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('500 bar',distance,quantity,interest,transport_params_filepath, currency) +\
+        dist_costs_lh2 = h2_conversion_stand('LH2', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
+                calculate_trucking_costs('LH2',distance,quantity,interest,transport_params_filepath, currency) +\
                     h2_conversion_stand(final_state+'_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
     else:
         dist_costs_lh2 = h2_conversion_stand('LH2', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
