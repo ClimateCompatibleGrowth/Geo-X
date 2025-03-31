@@ -1,14 +1,15 @@
-# -*- coding: utf-8 -*-
 """
-Created on Sun Feb 26 11:47:57 2023
-
-@author: Claire Halloran, University of Oxford
-
+@authors:
+ - Claire Halloran
+ - Samiyha Naqvi, University of Oxford, samiyha.naqvi@eng.ox.ac.uk
+ - Alycia Leonard, University of Oxford, alycia.leonard@eng.ox.ac.uk
+ - Lukas Schirren, Imperial College London, lukas.schirren@imperial.ac.uk
 Includes code from Nicholas Salmon, University of Oxford, for optimizing
 the commodity's plant capacity.
 
+Optimisation of the commodity production plant, accounting for e.g., demand 
+schedule, water constraints, and renewable energy availability.
 """
-
 import atlite
 from copy import deepcopy
 import geopandas as gpd
@@ -16,24 +17,69 @@ import logging
 import numpy as np
 import pandas as pd
 import pyomo.environ as pm
+from scipy.constants import physical_constants
+import xarray as xr
+
 from network import Network
+
+def hydropower_potential_with_capacity(flowrate, head, capacity, eta):
+    '''
+    Calculate the hydropower potential considering the capacity limit.
+
+    ...
+    Parameters
+    ----------
+    flowrate : float
+        flowrate calculated with runoff multiplied by the hydro-basin area, 
+        in cubic meters per hour.
+    head : float
+        height difference at the hydropower site, in meters.
+    capacity : float
+        maximum hydropower capacity in Megawatts (MW).
+    eta : float
+        efficiency of the hydropower plant.
+
+    Returns
+    -------
+    capacity_factor : xarray DataArray
+        limited potential divided by the capacity.
+    '''
+    # kg/m3; Density of water
+    rho = 997
+    
+    # m/s2; Based on the CODATA constants 2018
+    g = physical_constants['standard acceleration of gravity'][0]
+    
+    # Transform flowrate per hour into flowrate per second
+    # (if Atlite is updated to 0.4.0 the term (1000/24) can be removed)
+    Q = (flowrate/(1000/24)) / 3600
+
+    potential = (eta * rho * g * Q * head) / (1000 * 1000) # MW
+    limited_potential = xr.where(potential > capacity, capacity, potential)
+    capacity_factor = limited_potential / capacity
+
+    return capacity_factor
 
 def get_demand_schedule(quantity, start_date, end_date, transport_state, transport_params_filepath, freq):
     '''
     Calculates hourly commodity demand for truck shipment and pipeline transport.
 
+    ...
     Parameters
     ----------
     quantity : float
         annual amount of commodity to transport in kilograms.
-    start_date: string
+    start_date : string
         start date for demand schedule in the format YYYY-MM-DD.
-    end_date: string
+    end_date : string
         end date for demand schedule in the format YYYY-MM-DD.
     transport_state : string
-        state commodity is transported in, one of '500 bar', 'LH2', 'LOHC', or 'NH3'.
+        state commodity is transported in, one of '500 bar', 'LH2', 'LOHC', 
+        or 'NH3'.
     transport_params_filepath : string
-        path to transport_parameters.xlsx file
+        path to transport_parameters.xlsx file.
+    freq : string
+        frequency that the schedules should be in.
 
     Returns
     -------
@@ -45,23 +91,23 @@ def get_demand_schedule(quantity, start_date, end_date, transport_state, transpo
     # Schedule for pipeline
     index = pd.date_range(start_date, end_date, freq = freq)
     pipeline_hourly_quantity = quantity/index.size
-    pipeline_hourly_demand_schedule = pd.DataFrame(pipeline_hourly_quantity, index=index,  columns = ['Demand'])
+    pipeline_hourly_demand_schedule = pd.DataFrame(pipeline_hourly_quantity, index=index,  columns=['Demand'])
     # Resample pipeline schedule
     pipeline_demand_resampled_schedule = pipeline_hourly_demand_schedule.resample(freq).mean()
 
-    # NaN is where there is no road access and no construction so hexagon is infeasible for trucking.
+    # NaN is where there is no road access and no construction so hexagon 
+    # is infeasible for trucking
     if pd.isnull(transport_state):
         trucking_hourly_demand_schedule = np.nan
     # If demand center is in hexagon
     elif transport_state=="None":
-        # Schedule for trucking
-        annual_deliveries = 365*24 # -- This is just the number of hours in a year? Why is this "annual deliveries"?
-        # -- Is it just because this is where there is no transport so it creates an even profile?
-        # -- I think we need to add a comment to explain anyway.
+        # A demand schedule is required
+        # Even though no trucking will happen, we keep the name for consistency
+        # as only one hexagon will have no trucking happening in it
+        annual_deliveries = 365*24
         trucking_hourly_demand = quantity/annual_deliveries
         index = pd.date_range(start_date, end_date, periods=annual_deliveries)
-        trucking_demand_schedule = pd.DataFrame(trucking_hourly_demand, index=index, columns = ['Demand'])
-        # -- Could we add some comment to explain why this is still called "trucking" schedule despite no trucking happening?
+        trucking_demand_schedule = pd.DataFrame(trucking_hourly_demand, index=index, columns=['Demand'])
         # First create hourly schedule
         trucking_hourly_demand_schedule = trucking_demand_schedule.resample('H').sum().fillna(0.)
         # Then resample to desired frequency using mean
@@ -74,7 +120,7 @@ def get_demand_schedule(quantity, start_date, end_date, transport_state, transpo
 
         truck_capacity = transport_params['Net capacity (kg of commodity)']
 
-        # schedule for trucking
+        # Schedule for trucking
         annual_deliveries = quantity/truck_capacity
         quantity_per_delivery = quantity/annual_deliveries
         index = pd.date_range(start_date, end_date, periods=annual_deliveries)
@@ -90,12 +136,13 @@ def get_water_constraint(n, demand_profile, water_limit):
     '''
     Calculates the water constraint.
 
+    ...
     Parameters
     ----------
     n : network Object
-        network
+        network.
     demand_profile : pandas DataFrame
-        hourly dataframe of hydrogen demand in kg.
+        hourly dataframe of commodity demand in kg.
     water_limit : float
         annual limit on water available for electrolysis in hexagon, in cubic meters.
 
@@ -105,45 +152,57 @@ def get_water_constraint(n, demand_profile, water_limit):
         whether there is a water constraint or not.
     '''
     if n.type == "hydrogen":
-        # total hydrogen demand in kg
+        # Total hydrogen demand in kg
         total_hydrogen_demand = demand_profile['Demand'].sum()
-        # check if hydrogen demand can be met based on hexagon water availability
-        water_constraint =  total_hydrogen_demand <= water_limit * 111.57 # kg H2 per cubic meter of water
+        # Check if hydrogen demand can be met based on hexagon water availability
+        # kg H2 per cubic meter of water
+        water_constraint =  total_hydrogen_demand <= water_limit * 111.57
     elif n.type == "ammonia":
-        # total ammonia demand in kg
+        # Total ammonia demand in kg
         total_ammonia_demand = (
                     (n.loads_t.p_set['Ammonia demand'] * n.snapshot_weightings['objective']).sum() / 6.25 * 1000)
-        # total hydrogen demand in kg
-        total_hydrogen_demand = total_ammonia_demand * 17 / 3  # convert kg ammonia to kg H2
-        # check if hydrogen demand can be met based on hexagon water availability
-        water_constraint = total_hydrogen_demand <= water_limit * 111.57  # kg H2 per cubic meter of water
-        # note that this constraint is purely stoichiometric-- more water may be needed for cooling or other processes
+        # Total hydrogen demand in kg
+        # Converts kg ammonia to kg H2
+        total_hydrogen_demand = total_ammonia_demand * 17 / 3  
+        # Check if hydrogen demand can be met based on hexagon water availability
+        # kg H2 per cubic meter of water
+        water_constraint = total_hydrogen_demand <= water_limit * 111.57
+        
+        # Note: this constraint is purely stoichiometric
+        # - more water may be needed for cooling or other processes
+    
     return water_constraint
 
 def get_generator_profile(generator, cutout, layout, hexagons, freq):
     '''
     Determines the generation profile of the specified generator in the cutout based on weather data.
 
+    ...
     Parameters
     ----------
     generator : string
-        The name of the generator type to be used (i.e., "Solar" for pv, "Wind" for wind turbines)
-    cutout : 
-        A spatial and temporal subset of ERA-5 weather data consisting of grid cells
+        the name of the generator type to be used.
+        (i.e., "solar" for pv, "wind" for wind turbines)
+    cutout : atlite cutout object
+        a spatial and temporal subset of ERA-5 weather data consisting of grid 
+        cells.
         https://atlite.readthedocs.io/en/latest/introduction.html
-    layout : 
-        The capacity to be built in each of the grid_cells.
+    layout : xarray DataArray
+        the capacity to be built in each of the grid_cells.
         https://atlite.readthedocs.io/en/master/ref_api.html
-    hexagons :
-        Hexagon GeoJSON file.
+    hexagons : geodataframe
+        hexagon file outputted after the water_cost file is ran.
+    freq : string
+        frequency that the profiles should be in.
     
     Returns
     -------
-    profile : 
-        A profile where weather data has been converted into a generation time-series.
+    profile : xarray DataArray
+        A profile where weather data has been converted into a generation
+        time-series.
         https://atlite.readthedocs.io/en/master/ref_api.html
     '''
-    if generator == "Solar":
+    if generator == "solar":
         # The panel string should be in the config file as well in case people want to change that in the prep and main.
         # Alycia to double-check that the CSi is 1MW
         profile = cutout.pv(panel= str(snakemake.config["panel"]),
@@ -152,7 +211,7 @@ def get_generator_profile(generator, cutout, layout, hexagons, freq):
                             shapes = hexagons,
                             per_unit = True).resample(time=freq).mean()
         profile = profile.rename(dict(dim_0='hexagon'))
-    elif generator == "Wind":
+    elif generator == "wind":
         # This string is what we should need to put in the config file (turbine) for both data prep, replacing the constant 4, replacing here.
         profile = cutout.wind(turbine = str(snakemake.config["turbine"]),
                             layout = layout,
@@ -166,9 +225,10 @@ def solve_model(network_class, solver):
     '''
     Solves model using the provided solver.
 
+    ...
     Parameters
     ----------
-    n : 
+    n : network Object
         network.
     solver : string
         name of solver to be used.
@@ -189,11 +249,12 @@ def get_h2_results(n, generators):
     '''
     Get final results from network optimisation
 
+    ...
     Parameters
     ----------
-    n : 
-        network
-    generators : list
+    n : network Object
+        network.
+    generators : dictionary
         contains types of generators that this plant uses.
 
     Returns
@@ -202,34 +263,35 @@ def get_h2_results(n, generators):
         levelized cost per kg commodity.
     generator_capactities : dictionary
         contains each generator with their optimal capacity in MW.
-    electrolyzer_capacity: float
+    electrolyzer_capacity : float
         optimal electrolyzer capacity in MW.
-    battery_capacity: float
+    battery_capacity : float
         optimal battery storage capacity in MW/MWh (1 hour batteries).
-    h2_storage: float
+    h2_storage : float
         optimal hydrogen storage capacity in MWh.
     '''
     generator_capacities = {}
-    lc = n.objective/(n.loads_t.p_set.sum()[0]/39.4*1000) # convert back to kg H2
+    # Convert back to kg H2
+    lc = n.objective/(n.loads_t.p_set.sum()[0]/39.4*1000)
     for generator in generators:
-            generator_capacities[generator] = n.generators.p_nom_opt[f"{generator}"]
+            generator_capacities[generator] = n.generators.p_nom_opt[generator.capitalize()]
     electrolyzer_capacity = n.links.p_nom_opt['Electrolysis']
     battery_capacity = n.storage_units.p_nom_opt['Battery']
     h2_storage = n.stores.e_nom_opt['Compressed H2 Store']
+    
     return lc, generator_capacities, electrolyzer_capacity, battery_capacity, h2_storage
 
 def get_nh3_results(n, generators):
     '''
     Get final results from network optimisation
 
+    ...
     Parameters
     ----------
-    n : 
-        network
+    n : network Object
+        network.
     generators : list
         contains types of generators that this plant uses.
-    water_limit : float
-        annual limit on water available for electrolysis in hexagon, in cubic meters. Default is None.
 
     Returns
     -------
@@ -237,23 +299,26 @@ def get_nh3_results(n, generators):
         levelized cost per kg commodity.
     generator_capactities : dictionary
         contains each generator with their optimal capacity in MW.
-    electrolyzer_capacity: float
+    electrolyzer_capacity : float
         optimal electrolyzer capacity in MW.
-    battery_capacity: float
+    battery_capacity : float
         optimal battery storage capacity in MW/MWh (1 hour batteries).
-    h2_storage: float
+    h2_storage : float
         optimal hydrogen storage capacity in MWh.
+    nh3_storage : float
+        optimal ammonia storage capacity in MWh.
     '''
     generator_capacities = {}
     lc = n.objective / ((n.loads_t.p_set['Ammonia demand'] * n.snapshot_weightings[
         'objective']).sum() / 6.25 * 1000)  # convert back to kg NH3
     for generator in generators:
-            generator_capacities[generator] = n.generators.p_nom_opt[generator]
+            generator_capacities[generator] = n.generators.p_nom_opt[generator.capitalize()]
     electrolyzer_capacity = n.links.p_nom_opt['Electrolysis']
     battery_capacity = n.stores.e_nom_opt['Battery']
     h2_storage = n.stores.e_nom_opt['CompressedH2Store']
     # !!! need to save ammonia storage capacity as well
     nh3_storage = n.stores.e_nom_opt['Ammonia']
+
     return lc, generator_capacities, electrolyzer_capacity, battery_capacity, h2_storage, nh3_storage
 
 def _nh3_pyomo_constraints(n, snapshots):
@@ -319,10 +384,6 @@ def _nh3_ramp_up(model, t):
         model.link_p_nom['HB'] * model.HB_max_ramp_up()
 
 if __name__ == "__main__":
-    # -- Next two lines to be deleted
-    # warnings.filterwarnings("ignore")
-    logging.basicConfig(level=logging.ERROR)
-
     transport_params_filepath = str(snakemake.input.transport_parameters)
     country_params_filepath = str(snakemake.input.country_parameters)
     demand_params_filepath = str(snakemake.input.demand_parameters )
@@ -341,8 +402,16 @@ if __name__ == "__main__":
     pipeline_construction = True # snakemake config
 
     # Get a uniform capacity layout for all grid cells. https://atlite.readthedocs.io/en/master/ref_api.html
-    # Alycia to double-check we are using the right layout
-    cutout_filepath = f'Cutouts/{snakemake.wildcards.country}_{snakemake.wildcards.weather_year}.nc'
+    cutout_filepath = f'cutouts/{snakemake.wildcards.country}_{snakemake.wildcards.weather_year}.nc'
+
+    # Checking that the weather file is in the 'cutouts' folder
+    try:
+        with open(cutout_filepath) as f:
+            print("Weather file found")
+    except FileNotFoundError as e:
+        e.strerror = "Weather file not found. Please run weather file rule or add weather file to cutouts folder. Missing file"
+        raise e
+    
     cutout = atlite.Cutout(cutout_filepath)
     layout = cutout.uniform_layout()
     profiles = []
@@ -350,13 +419,68 @@ if __name__ == "__main__":
     water_limit = bool(snakemake.config['water_limit'])
     freq = str(snakemake.config['freq'])
     
-    for gen in generators.keys():
-         profiles.append(get_generator_profile(gen, cutout, layout, hexagons, freq))
+    # Creating hydropower generator profile
+    if "hydro" in generators:
+        location_hydro = gpd.read_file('data/hydro/hydropower_dams.gpkg')
+        hydrobasins = gpd.read_file('data/hydro/hybas_lev10_v1c.shp')
+        hydrobasins['lat'] = location_hydro.geometry.y
+        hydrobasins['lon'] = location_hydro.geometry.x
+        
+        runoff = cutout.hydro(
+            plants=location_hydro,
+            hydrobasins= hydrobasins,
+            # Normalize output per unit area
+            per_unit=True
+            ).resample(time=freq).mean()
+        
+        # Efficiency of hydropower plant
+        eta = 0.75
+
+        capacity_factor = xr.apply_ufunc(
+            hydropower_potential_with_capacity,
+            runoff,
+            xr.DataArray(location_hydro['head'].values, dims=['plant']),
+            xr.DataArray(location_hydro['capacity'].values, dims=['plant']),
+            eta,
+            vectorize=True,
+            # Dask for parallel computation
+            dask='parallelized',
+            output_dtypes=[float]
+            )
+
+        hydro_hex_mapping = gpd.sjoin(location_hydro, hexagons, how='left', 
+                                      predicate='within')
+        num_hexagons = len(hexagons)
+        num_time_steps = len(capacity_factor.time)
+
+        hydro_profile = xr.DataArray(
+            data=np.zeros((num_hexagons, num_time_steps)),
+            dims=['hexagon', 'time'],
+            coords={'hexagon': np.arange(num_hexagons), 
+                    'time': capacity_factor.time}
+            )
+
+        for hex_index in range(num_hexagons):
+            plants_in_hex = hydro_hex_mapping[hydro_hex_mapping['index_right'] == hex_index].index.tolist()
+            if len(plants_in_hex) > 0:
+                hex_capacity_factor = capacity_factor.sel(plant=plants_in_hex)
+                plant_capacities = xr.DataArray(location_hydro.loc[plants_in_hex]['capacity'].values, dims=['plant'])
+
+                weights = plant_capacities / plant_capacities.sum()
+                weighted_avg_capacity_factor = (hex_capacity_factor * weights).sum(dim='plant')
+                hydro_profile.loc[hex_index] = weighted_avg_capacity_factor
+
+    # Adding generators into profiles list
+    for gen in generators:
+         if gen == "hydro":
+            profiles.append(hydro_profile)         
+         else:
+            profiles.append(get_generator_profile(gen, cutout, layout, hexagons, freq))
     
     times = profiles[0].time
     plant_type = str(snakemake.wildcards.plant_type)
 
-    # Loop through all demand centers -- limit this on continental scale
+    # Loop through all demand centers
     for demand_center in demand_centers:
         print(f"\nOptimisation for {demand_center} begins...")
         # Store trucking results
@@ -397,18 +521,21 @@ if __name__ == "__main__":
                                 freq)
             
             # Get the max capacity for each generation type
-            for gen in generators.keys():
+            for gen in generators:
                 if plant_type == "hydrogen":
                     potential = profiles[gen_index].sel(hexagon = i)
                 elif plant_type == "ammonia":
                     potential = profiles[gen_index].sel(hexagon=i, time=trucking_demand_schedule.index)
                 # -- Eventually make a for loop - we can change the theo_turbines name to be Wind
-                gen_capacity = int(snakemake.config['gen_capacity'][f'{gen.lower()}'])
-                if gen == "Wind":
+                gen_capacity = int(snakemake.config['gen_capacity'][f'{gen}'])
+                if gen == "wind":
                     # -- We'll need to remove this hard-coded 4 eventually CONFIG FILE - 4 MW turbine in spatial data prep
                     max_capacity = hexagons.loc[i,'theo_turbines']*gen_capacity
-                elif gen == "Solar":
+                elif gen == "solar":
                     max_capacity = hexagons.loc[i,'theo_pv']*gen_capacity
+                ##### elif added newly for hydro, need to double check the column name
+                elif gen == "hydro":
+                    max_capacity = hexagons.loc[i,'hydro']*gen_capacity
                 # -- Eventually move loops to something like this so we don't have ifs - max_capacity = hexagons.loc[i, gen] * SNAKEMAKE_CONFIG_GEN_SIZE
                 
                 generators[gen].append(potential)
@@ -524,7 +651,7 @@ if __name__ == "__main__":
                                 p_generators_capacities[gen].append(capacity)
                         else:
                             pipeline_lcs[i], p_electrolyzer_capacities[i], p_battery_capacities[i], p_h2_storages[i] = np.nan
-                            for gen in p_generators_capacities.keys():
+                            for gen in p_generators_capacities:
                                 p_generators_capacities[gen].append(np.nan)
                             if plant_type == "ammonia": 
                                 p_nh3_storages[1] = np.nan
@@ -532,7 +659,7 @@ if __name__ == "__main__":
         print("\nOptimisation complete.\n")        
         # Updating trucking-based results in hexagon file
         for gen, capacities in t_generators_capacities.items():
-            hexagons[f'{demand_center} trucking {gen.lower()} capacity'] = capacities
+            hexagons[f'{demand_center} trucking {gen} capacity'] = capacities
         hexagons[f'{demand_center} trucking electrolyzer capacity'] = t_electrolyzer_capacities
         hexagons[f'{demand_center} trucking battery capacity'] = t_battery_capacities
         hexagons[f'{demand_center} trucking H2 storage capacity'] = t_h2_storages
@@ -542,7 +669,7 @@ if __name__ == "__main__":
 
         # Updating pipeline-based results in hexagon file
         for gen, capacities in p_generators_capacities.items():
-            hexagons[f'{demand_center} pipeline {gen.lower()} capacity'] = capacities
+            hexagons[f'{demand_center} pipeline {gen} capacity'] = capacities
         hexagons[f'{demand_center} pipeline electrolyzer capacity'] = p_electrolyzer_capacities
         hexagons[f'{demand_center} pipeline battery capacity'] = p_battery_capacities
         hexagons[f'{demand_center} pipeline H2 storage capacity'] = p_h2_storages

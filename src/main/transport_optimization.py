@@ -1,47 +1,44 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-Created on Sun Mar 26 16:52:59 2023
-
-@author: Claire Halloran, University of Oxford
+@authors:
+ - Claire Halloran
+ - Samiyha Naqvi, University of Oxford, samiyha.naqvi@eng.ox.ac.uk
+ - Alycia Leonard, University of Oxford, alycia.leonard@eng.ox.ac.uk
 Contains code originally written by Leander MÃ¼ller, RWTH Aachen University
 
-Calculates the cost-optimal commodity transportation strategy to the nearest demand center.
-
-Calculate cost of pipeline transport and demand profile based on optimal size
-
-
-
+Calculates the cost-optimal commodity transportation strategy to the nearest 
+demand center.
+Calculates cost of pipeline transport and demand profile based on optimal size.
 """
-
 import geopandas as gpd
+import geopy.distance
 import numpy as np
 import pandas as pd
+from shapely.geometry import Point
+import shapely.wkt
+
 from functions import CRF, cheapest_trucking_strategy, h2_conversion_stand, \
                             cheapest_pipeline_strategy, calculate_trucking_costs, \
                             calculate_nh3_pipeline_costs
-from shapely.geometry import Point
-import shapely.wkt
-import geopy.distance
 from utils import check_folder_exists
 
 def calculate_dist_to_demand(hex_geometry, demand_center_lat, demand_center_lon):
     """
     Calculates distance to demand.
 
+    ...
     Parameters
     ----------
     hex_geometry : geodataframe
-        A specific hexagon geometry pulled from the full hexagon GeoJSON file
-    demand_center_lat : 
-        Latitude of the demand centre
-    demand_center_lon : 
-        Longitude of the demand centre
+        A specific hexagon geometry pulled from the full hexagon GeoJSON file.
+    demand_center_lat : float
+        Latitude of the demand centre.
+    demand_center_lon : float
+        Longitude of the demand centre.
     
     Returns
     -------
     dist : float
-        Distance between demand center coordinates and hexagon coordinates in km
+        Distance between demand center coordinates and hexagon coordinates in km.
     """
     poly = shapely.wkt.loads(str(hex_geometry))
     center = poly.centroid
@@ -57,23 +54,24 @@ def calculate_road_construction_cost(distance_to_road, road_capex,
     """
     Calculates the cost of constructing a road from a hexagon to the nearest road.
 
+    ...
     Parameters
     ----------
     distance_to_road : float
         Distance from the hexagon to the nearest road in km.
-    road_capex : 
-        Cost to construct road (per unit?)
-    infrastructure_interest_rate : 
-        Interest rate on infrastructure costs
-    infrastructure_lifetime_years :
-        Lifetime in years of the constructed infrastructure
-    road_opex :
-        Operating costs of the road (per unit?)
+    road_capex : float
+        Cost to construct road.
+    infrastructure_interest_rate : float
+        Interest rate on infrastructure costs.
+    infrastructure_lifetime_years : integer
+        Lifetime in years of the constructed infrastructure.
+    road_opex : float
+        Operating costs of the road.
     
     Returns
     -------
     cost : float
-        Cost to construct a road
+        Cost to construct a road.
     """
     cost = distance_to_road * road_capex * CRF(
                                             infrastructure_interest_rate, 
@@ -99,12 +97,11 @@ def main():
     
     demand_center_list = pd.read_excel(demand_params_filepath,
                                     sheet_name='Demand centers',
-                                    index_col='Demand center',
-                                    )
+                                    index_col='Demand center',)
     demand_centers = demand_center_list.index
+
     country_params = pd.read_excel(country_params_filepath,
                                         index_col='Country')
-    
 
     needs_pipeline_construction = bool(snakemake.config["transport"]["pipeline_construction"])
     needs_road_construction = bool(snakemake.config["transport"]["road_construction"])
@@ -114,16 +111,17 @@ def main():
     road_opex = infra_data.at['Short road','OPEX']
 
     # Prices from the country excel file
-    elec_price = country_params['Electricity price (euros/kWh)'].iloc[0]
-    heat_price = country_params['Heat price (euros/kWh)'].iloc[0]
+    currency = str(snakemake.config["currency"])
+    elec_price = country_params[f'Electricity price ({currency}/kWh)'].iloc[0]
+    heat_price = country_params[f'Heat price ({currency}/kWh)'].iloc[0]
     plant_interest_rate = country_params['Plant interest rate'].iloc[0]
     infrastructure_interest_rate = country_params['Infrastructure interest rate'].iloc[0]
     infrastructure_lifetime = country_params['Infrastructure lifetime (years)'].iloc[0]
 
     check_folder_exists("resources")
     
-    # calculate cost of hydrogen state conversion and transportation for demand
-    # loop through all demand centers-- limit this on continential scale
+    # Calculate cost of hydrogen state conversion and transportation for demand
+    # Loop through all demand centers
     for demand_center in demand_centers:
         print(f"\nOptimisation for {demand_center} begins...\n")
         # Demand location based variables
@@ -162,7 +160,8 @@ def main():
                                                 elec_price,
                                                 heat_price,
                                                 plant_interest_rate,
-                                                conversion_params_filepath
+                                                conversion_params_filepath,
+                                                currency
                                                 )[2]/annual_demand_quantity
                         trucking_states[i] = "None"
                         road_construction_costs[i] = 0.
@@ -172,7 +171,8 @@ def main():
                                                 elec_price,
                                                 heat_price,
                                                 plant_interest_rate,
-                                                conversion_params_filepath
+                                                conversion_params_filepath,
+                                                currency
                                                 )[2]/annual_demand_quantity
                         trucking_states[i] = "None"
                         road_construction_costs[i] = 0.
@@ -215,13 +215,14 @@ def main():
                                                         infrastructure_interest_rate,
                                                         conversion_params_filepath,
                                                         transport_params_filepath,
-                                                        )
+                                                        currency)
                     elif plant_type == "ammonia":
                         trucking_costs[i] = calculate_trucking_costs(demand_state,
                                                            dist_to_demand, 
                                                            annual_demand_quantity,
                                                            infrastructure_interest_rate, 
-                                                           transport_params_filepath)/annual_demand_quantity
+                                                           transport_params_filepath,
+                                                           currency)/annual_demand_quantity
                         trucking_states[i] = "NH3"
                 # Otherwise, if road construction not allowed
                 else:
@@ -239,16 +240,17 @@ def main():
                                                             infrastructure_interest_rate,
                                                             conversion_params_filepath,
                                                             transport_params_filepath,
+                                                            currency
                                                             )
                         elif plant_type == "ammonia":
                             trucking_costs[i] = calculate_trucking_costs(demand_state,
                                                            dist_to_demand, 
                                                            annual_demand_quantity,
                                                            infrastructure_interest_rate, 
-                                                           transport_params_filepath)/annual_demand_quantity
+                                                           transport_params_filepath,
+                                                           currency)/annual_demand_quantity
                             trucking_states[i] = "NH3"
                     # And if road construction is not allowed and distance to road is > 0, trucking states are nan
-                    # -- Sam to confirm whether assigning nan will cause future issues in code
                     elif dist_to_road>0: 
                         trucking_costs[i]=trucking_states[i] = np.nan
 
@@ -263,7 +265,8 @@ def main():
                                                     heat_price,
                                                     infrastructure_interest_rate,
                                                     conversion_params_filepath,
-                                                    pipeline_params_filepath,
+                                                    pipeline_params_filepath, 
+                                                    currency
                                                     )
                     elif plant_type == "ammonia":
                         pipeline_costs[i], pipeline_type =\
@@ -271,23 +274,23 @@ def main():
                                                         annual_demand_quantity,
                                                         elec_price,
                                                         pipeline_params_filepath,
-                                                        infrastructure_interest_rate
-                                                        )
+                                                        infrastructure_interest_rate,
+                                                        currency)
                 else:
                     pipeline_costs[i] = np.nan
 
         print("\nOptimisation complete.\n")
         # Hexagon file updated with each demand center's costs and states
-        hexagons[f'{demand_center} road construction costs'] = road_construction_costs # cost of road construction
+        hexagons[f'{demand_center} road construction costs'] = road_construction_costs
         if plant_type == "hydrogen":
-            hexagons[f'{demand_center} trucking transport and conversion costs'] = trucking_costs # supply conversion, trucking transport, and demand conversion
-            hexagons[f'{demand_center} pipeline transport and conversion costs'] = pipeline_costs # cost of supply conversion, pipeline transport, and demand conversion
+            hexagons[f'{demand_center} trucking transport and conversion costs'] = trucking_costs
+            hexagons[f'{demand_center} pipeline transport and conversion costs'] = pipeline_costs
         elif plant_type == "ammonia":
-            hexagons[f'{demand_center} trucking transport costs'] = trucking_costs # cost of trucking transport
-            hexagons[f'{demand_center} pipeline transport costs'] = pipeline_costs # cost of supply conversion, pipeline transport, and demand conversion
+            hexagons[f'{demand_center} trucking transport costs'] = trucking_costs
+            hexagons[f'{demand_center} pipeline transport costs'] = pipeline_costs
         hexagons[f'{demand_center} trucking state'] = trucking_states
 
-    hexagons.to_file(str(snakemake.output), driver='GeoJSON', encoding='utf-8') # SNAKEMAKE OUTPUT
+    hexagons.to_file(str(snakemake.output), driver='GeoJSON', encoding='utf-8')
 
 if __name__ == "__main__":
     main()

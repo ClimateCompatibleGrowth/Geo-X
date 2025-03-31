@@ -1,28 +1,22 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-Created on Wed Apr  5 13:44:32 2023
+@authors:
+ - Claire Halloran
+ - Samiyha Naqvi, University of Oxford, samiyha.naqvi@eng.ox.ac.uk
+ - Alycia Leonard, University of Oxford, alycia.leonard@eng.ox.ac.uk
 
-@author: Claire Halloran, University of Oxford
-
-Total hydrogen cost
-
-Bring together all previous data to calculate lowest-cost of commodity
+Bring together all previous data to calculate lowest-cost of commodity.
 """
-
-#%% identify lowest-cost strategy: trucking vs. pipeline
-
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+
 from utils import check_folder_exists
 
 def main():
     hexagons = gpd.read_file(str(snakemake.input.hexagons))
     demand_params_filepath = str(snakemake.input.demand_parameters)
     demand_center_list = pd.read_excel(demand_params_filepath,
-                                    index_col='Demand center',
-                                    )
+                                    index_col='Demand center')
     demand_centers = demand_center_list.index
     plant_type = str(snakemake.wildcards.plant_type)
 

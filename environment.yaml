@@ -1,4 +1,4 @@
-name: geox-new
+name: geox
 channels:
   - conda-forge
   - nodefaults

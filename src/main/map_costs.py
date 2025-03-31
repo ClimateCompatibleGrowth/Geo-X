@@ -1,17 +1,16 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-Created on Thu Apr 27 11:14:48 2023
-
-@author: Claire Halloran, University of Oxford
+@authors: 
+ - Claire Halloran
+ - Samiyha Naqvi, University of Oxford, samiyha.naqvi@eng.ox.ac.uk
+ - Alycia Leonard, University of Oxford, alycia.leonard@eng.ox.ac.uk
 
 This script visualizes the spatial cost of the commodity for each demand center.
 """
-
-import geopandas as gpd
 import cartopy.crs as ccrs
+import geopandas as gpd
 import matplotlib.pyplot as plt
 import pandas as pd
+
 from utils import check_folder_exists
 
 def plot_and_save(crs, hexagons, name, legend_kwds, output_folder, figsize=(10,5), legend=True, cmap='viridis_r', 
@@ -23,35 +22,37 @@ def plot_and_save(crs, hexagons, name, legend_kwds, output_folder, figsize=(10,5
 
     Parameters
     ----------
-    crs : 
-        an object of the cartopy.crs.Orthographic class, which determines
-        the coordinate reference systems (crs) of a given central latitude and 
-        longitude.
-    hexagons :
-        hexagon GeoJSON file
+    crs : cartopy Orthographic Object
+        determines the coordinate reference systems (crs) of a given 
+        central latitude and longitude.
+    hexagons : geodataframe
+        hexagon GeoJSON file.
     name : string
-        name of column to use.
-    legend_kwds : 
-        keyword arguments - 'label' will overwrite the auto-generated label.
-    title : string
-        name of axes.
+        used for column title, axes title and file naming.
+    legend_kwds : dictionary
+        keyword arguments to pass to matplotlib.pyplot.legend() - 'label' will
+        overwrite the auto-generated label.
+    output_folder : string
+        path to the output folder.
     figsize : tuple
-        size of figure. Default is (10,5)
+        size of figure. Default is (10,5).
     legend : boolean
-        whether to plot a legend or not
+        whether to plot a legend or not. Default is True.
     cmap : string
-        the name of a colormap.
+        the name of a colormap. Default is 'viridis_r'.
     missing_kwds : dictionary
-        keyword arguments specifying the colour for missing values. If None, 
-        missing values are not plotted.
+        keyword arguments specifying the colour for missing values. If None is 
+        specified, missing values are not plotted. Default is 
+        {"color": "lightgrey", "label": "Missing values",}.
     bbox_inches : string
-        bounding box in inches - will only save the given portion of the figure.
+        bounding box in inches - will only save the given portion of the 
+        figure. Default is "tight".
     """
     fig = plt.figure(figsize=figsize)
     ax = plt.axes(projection=crs)
     ax.set_axis_off()
 
-    # Only plots if there is at least one value that is not null
+    # Only plots if there is at least one non-null value
     if hexagons[name].isnull().all()==False:
         hexagons.to_crs(crs.proj4_init).plot(
             ax=ax,
@@ -67,6 +68,7 @@ def plot_and_save(crs, hexagons, name, legend_kwds, output_folder, figsize=(10,5
     plt.close()
 
 if __name__ == "__main__":
+    currency = snakemake.config["currency"]
     plant_type = str(snakemake.wildcards.plant_type)
     hexagons = gpd.read_file(str(snakemake.input.hexagons))
     demand_excel_path = str(snakemake.input.demand_parameters)
@@ -74,8 +76,7 @@ if __name__ == "__main__":
     demand_centers = demand_parameters.index
     transport_methods = ["trucking", "pipeline"]
 
-    # plot LCOH for each hexagon
-    # update central coordinates for area considered
+    # Update central coordinates for area considered
     hexagon_bounds = hexagons.geometry.bounds    
     min_lon, min_lat = hexagon_bounds[['minx','miny']].min()
     max_lon, max_lat = hexagon_bounds[['maxx','maxy']].max()
@@ -91,16 +92,17 @@ if __name__ == "__main__":
 
     for demand_center in demand_centers:
         print(f"\nPlotting for {demand_center} begins...")
-        # plot lowest LC in each location
+
+        # Lowest LC in each location
         plot_and_save(crs, hexagons, f'{demand_center} lowest cost', 
-                    {'label':'LC [euros/kg]'}, output_folder)
+                    {'label' : f'LC [{currency}/kg]'}, output_folder)
 
-        
         for transport_method in transport_methods:
+            # Trucking/ pipeline production cost
             plot_and_save(crs, hexagons, f'{demand_center} {transport_method} production cost',
-                        {'label':'Production LC [euros/kg]'}, output_folder)
+                        {'label' : f'Production LC [{currency}/kg]'}, output_folder)
 
-            #%% plot transportation costs
+            # Trucking/ pipeline costs
             if plant_type == "hydrogen":
                 if transport_method == "trucking":
                     hexagons[f'{demand_center} total {transport_method} costs'] =\
@@ -108,10 +110,10 @@ if __name__ == "__main__":
                             hexagons[f'{demand_center} road construction costs']
                     
                     plot_and_save(crs, hexagons, f'{demand_center} total {transport_method} costs', 
-                        {'label':f'{transport_method} cost [euros/kg]'}, output_folder)
+                        {'label' : f'{transport_method} cost [{currency}/kg]'}, output_folder)
                 elif transport_method == "pipeline":
                     plot_and_save(crs, hexagons, f'{demand_center} {transport_method} transport and conversion costs', 
-                                {'label':f'{transport_method} cost [euros/kg]'}, output_folder)
+                                {'label' : f'{transport_method} cost [{currency}/kg]'}, output_folder)
             elif plant_type == "ammonia":
                 if transport_method == "trucking":
                     hexagons[f'{demand_center} total {transport_method} costs'] =\
@@ -119,16 +121,14 @@ if __name__ == "__main__":
                             hexagons[f'{demand_center} road construction costs']
             
                     plot_and_save(crs, hexagons, f'{demand_center} total {transport_method} costs', 
-                                {'label':f'{transport_method} cost [euros/kg]'}, output_folder)
+                                {'label' : f'{transport_method} cost [{currency}/kg]'}, output_folder)
                 elif transport_method == "pipeline":
-                    # -- the below doesn't work for ammonia pipeline as it's null. Might need to change nulls to zero 
                     plot_and_save(crs, hexagons, f'{demand_center} {transport_method} transport costs', 
-                                {'label':f'{transport_method} cost [euros/kg]'}, output_folder)
+                                {'label': f'{transport_method} cost [{currency}/kg]'}, output_folder)
 
-            # %% plot total costs
-            # -- the below doesn't work for ammonia pipeline as it's null. Might need to change nulls to zero 
+            # Total cost
             plot_and_save(crs, hexagons, f'{demand_center} {transport_method} total cost',
-                        {'label':'LC [euros/kg]'}, output_folder)
+                        {'label': f'LC [{currency}/kg]'}, output_folder)
 
             # Electrolyzer capacity
             plot_and_save(crs, hexagons, f'{demand_center} {transport_method} electrolyzer capacity',
@@ -136,7 +136,7 @@ if __name__ == "__main__":
         
             # Electrolyzer costs
             plot_and_save(crs, hexagons, f'{demand_center} {transport_method} electrolyzer costs',
-                        {'label': '$'}, output_folder)
+                        {'label': f'{currency}'}, output_folder)
 
             # H2 storage capacity
             plot_and_save(crs, hexagons, f'{demand_center} {transport_method} H2 storage capacity',
@@ -144,35 +144,34 @@ if __name__ == "__main__":
         
             # H2 storage costs
             plot_and_save(crs, hexagons, f'{demand_center} {transport_method} H2 storage costs',
-                        {'label': '$'}, output_folder)
+                        {'label': f'{currency}'}, output_folder)
             
             # Battery capcity
             plot_and_save(crs, hexagons, f'{demand_center} {transport_method} battery capacity', 
                         {'label': 'Size (MW)'}, output_folder)
         
-            # battery costs
+            # Battery costs
             plot_and_save(crs, hexagons, f'{demand_center} {transport_method} battery costs',
-                        {'label': '$'}, output_folder)
+                        {'label': f'{currency}'}, output_folder)
 
-            for generator in generators.keys():
-                # generator capacity
-                generator = generator.lower()
-        
+            for generator in generators:
+                # Generator capacity
                 plot_and_save(crs, hexagons, f'{demand_center} {transport_method} {generator} capacity',
                             {'label': 'Capacity (MW)'}, output_folder)
         
-                # generator costs
+                # Generator costs
                 plot_and_save(crs, hexagons, f'{demand_center} {transport_method} {generator} costs',
-                            {'label': '$'}, output_folder)
+                            {'label': f'{currency}'}, output_folder)
         
-    # %% plot water costs
+    # Ocean water costs
     plot_and_save(crs, hexagons, 'Ocean water costs',
-                {'label':'Water cost [euros/kg H2]'}, output_folder)
+                {'label': f'Water cost [{currency}/kg H2]'}, output_folder)
 
     plt.ticklabel_format(style='plain')
 
+    # Freshwater costs
     plot_and_save(crs, hexagons, 'Freshwater costs',
-                {'label':'Water cost [euros/kg H2]'}, output_folder)
+                {'label': f'Water cost [{currency}/kg H2]'}, output_folder)
 
     plt.ticklabel_format(style='plain')
 

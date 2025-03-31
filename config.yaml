@@ -14,14 +14,15 @@ years_to_check: 1
 freq: '3H'
 
 # Generators:
-# Modify 'generators_dict' to hold the generators you would like to use. Make
-# sure it is in the same style as below.
-generators_dict: {'Solar' : [], 'Wind' : [],}
+# Modify 'generators_dict' to hold the generators you would like to use
+# Make sure it is in the same style as below
+generators_dict: {'solar' : [], 'wind' : [], 'hydro' : []}
 panel: 'CSi'
 turbine: 'NREL_ReferenceTurbine_2020ATB_4MW'
 gen_capacity:
     solar: 1
     wind: 4
+    hydro: 1
 
 # Other:
 solver : 'gurobi'
@@ -30,3 +31,6 @@ water_limit: False
 transport:
     pipeline_construction: True
     road_construction: True
+
+# Make sure this matches the currency used in most of your parameter files
+currency: 'euros'

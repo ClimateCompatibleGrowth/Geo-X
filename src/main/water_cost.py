@@ -1,18 +1,14 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-Created on Wed Apr  5 13:26:19 2023
+@authors: 
+ - Claire Halloran
+ - Samiyha Naqvi, University of Oxford, samiyha.naqvi@eng.ox.ac.uk
+ - Alycia Leonard, University of Oxford, alycia.leonard@eng.ox.ac.uk
 
-@author: Claire Halloran, University of Oxford
-
-Water costs for commodity production in each hexagon
-
-
+Water costs for commodity production in each hexagon.
 """
-
 import geopandas as gpd
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 def main():
     print("Calculations begin...\n")
@@ -29,13 +25,14 @@ def main():
     h2o_costs_dom_water_bodies = np.empty(len(hexagons))
     h2o_costs_ocean = np.empty(len(hexagons))
     min_h2o_costs = np.empty(len(hexagons))
-
+    
+    currency = snakemake.config["currency"]
     electricity_demand_h2o_treatment = water_data['Freshwater treatment electricity demand (kWh/m3)']
     electricity_demand_ocean_h2o_treatment = water_data['Ocean water treatment electricity demand (kWh/m3)']
-    water_transport_costs = water_data['Water transport cost (euros/100 km/m3)']
-    water_spec_cost = water_data['Water specific cost (euros/m3)']
+    water_transport_costs = water_data[f'Water transport cost ({currency}/100 km/m3)']
+    water_spec_cost = water_data[f'Water specific cost ({currency}/m3)']
     water_demand = water_data['Water demand  (L/kg of commodity)']
-    elec_price = country_params['Electricity price (euros/kWh)'].iloc[0]
+    elec_price = country_params[f'Electricity price ({currency}/kWh)'].iloc[0]
     
     # Loop through all hexagons
     # Calculating water costs for each hexagon
