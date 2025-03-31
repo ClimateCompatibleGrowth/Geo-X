@@ -1,18 +1,14 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-Created on Wed Apr  5 13:26:19 2023
+@authors: 
+ - Claire Halloran
+ - Samiyha Naqvi, University of Oxford, samiyha.naqvi@eng.ox.ac.uk
+ - Alycia Leonard, University of Oxford, alycia.leonard@eng.ox.ac.uk
 
-@author: Claire Halloran, University of Oxford
-
-Water costs for commodity production in each hexagon
-
-
+Water costs for commodity production in each hexagon.
 """
-
 import geopandas as gpd
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 def main():
     print("Calculations begin...\n")

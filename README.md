@@ -17,6 +17,32 @@ It also integrates code produced by Nick Salmon under an MIT licence:
 [https://github.com/nsalmon11/LCOH_Optimisation](https://github.com/nsalmon11/LCOH_Optimisation)
 
 ___
+# Contents
+- [Setup instructions](#setup-instructions)
+  - [Clone the repository](#clone-the-repository)
+  - [Set up the environment](#set-up-the-environment)
+  - [Get a Climate Data Store API key](#get-a-climate-data-store-api-key)
+  - [Install a solver](#install-a-solver)
+- [Preparing input data](#preparing-input-data)
+  - [Prepare input hexagons](#prepare-input-hexagons)
+    - [Hydro-specific files (Optional)](#hydro-specific-files-(optional))
+  - [Prepare input parameter Excel files](#prepare-input-parameter-excel-files)
+- [Running Geo-X with Snakemake](#running-geo-x-with-snakemake)
+  - [Modify the config file](#modify-the-config-file)
+  - [Run Geo-X rules](#run-geo-x-rules)
+    - [Get weather data (if needed)](#get-weather-data-(if-needed))
+    - [Run optimization or mapping rules](#run-optimization-or-mapping-rules)
+- [Definitions of all rules](#definitions-of-all-rules)
+  - [`get_weather_data` rule](#`get_weather_data`-rule)
+  - [`optimize_transport` rule](#`optimize_transport`-rule)
+  - [`calculate_water_costs` rule](#`calculate_water_costs`-rule)
+  - [`optimize_plant` rule](#`optimize_plant`-rule)
+  - [`calculate_total_cost` rule](#`calculate_total_cost`-rule)
+  - [`calculate_cost_components` rule](#`calculate_cost_components`-rule)
+  - [`calculate_map_costs` rule](#`calculate_map_costs`-rule)
+- [Limitations](#limitations)
+- [Citation](#citation)
+- [Case study parameters](#case-study-parameters)
 
 # Setup instructions
 
@@ -67,13 +93,12 @@ First, prepare spatial input data as a set of hexagons using the [H3 standard](h
 These hexagons are provided in the repository for the illustrative case study of Namibia.
 To analyse a different area of interest, the hexagon file needs to be changed, but needs to follow the logic of the one provided. 
 
-A full walkthrough on making these hexagons, including tools to create them, are available in the [GeoH2-data-prep](https://github.com/ClimateCompatibleGrowth/GeoH2-data-prep) repository.
+A full walkthrough on making these hexagons, including tools to create them, are available in the [Geo-X-data-prep](https://github.com/ClimateCompatibleGrowth/Geo-X-data-prep) repository.
 The hexagon file needs to have the following attributes:
 
   - waterbody_dist: Distance to selected waterbodies in area of interest
   - waterway_dist: Distance to selected waterways in area of interest
   - ocean_dist: Distance to ocean coastline
-  - grid_dist: Distance to transmission network
   - road_dist: Distance to road network
   - theo_pv: Theoretical potential of standardized PV plants (can be determined with [GLAES](https://github.com/FZJ-IEK3-VSA/glaes))
   - theo_wind: Theoretical potential of standardized wind turbines (can be determined with [GLAES](https://github.com/FZJ-IEK3-VSA/glaes))
@@ -85,14 +110,14 @@ Once you have created a hexagon file with these features, save it in the `data` 
 > `COUNTRY ISO CODE` is the country's ISO standard 2-letter abbreviation.
 
 ### Hydro-specific files (Optional)
-The hydro-specific files can be obtained by running the [GeoH2-data-prep](https://github.com/ClimateCompatibleGrowth/GeoH2-data-prep) repository and from the [HydroBASINS section of HydroSHEDS](https://www.hydrosheds.org/products/hydrobasins).
+The hydro-specific files can be obtained by running the [Geo-X-data-prep](https://github.com/ClimateCompatibleGrowth/Geo-X-data-prep) repository and from the [HydroBASINS section of HydroSHEDS](https://www.hydrosheds.org/products/hydrobasins).
 
 Create a `hydro` folder inside the `data` folder and place the following files inside it. You may need to rename them to match these:
 - `hydropower_dams.gpkg`
 - `hybas_lev10_v1c.shp`
 
->[!NOTE]
->You will notice that we have removed a region identifier from the title of `hybas_lev10_v1c.shp`. For example, it would be `hybas_af_lev10_v1c.shp` for Africa from the HydroSHEDS website. This change was made to generalise the code, allowing it to work across multiple regions without needing adjustments to the code.
+> [!NOTE]
+> You will notice that we have removed a region identifier from the title of `hybas_lev10_v1c.shp`. For example, it would be `hybas_af_lev10_v1c.shp` for Africa from the HydroSHEDS website. This change was made to generalise the code, allowing it to work across multiple regions without needing adjustments to the code.
 
 ## 2) Prepare input parameter Excel files
 Next, prepare the techno-economic input parameter spreadsheets.
@@ -108,9 +133,6 @@ For more information on these parameters, refer to the [PyPSA documentation](htt
 
 > [!IMPORTANT]
 > `COMMODITY ABBREVIATION` can be 'h2' or 'nh3' for currently implemented commodities. 
-> The excel files must be kept in a folder with the commodity name within another folder with the title matching the Country ISO Code. 
-> As currently implemented, the commodity must be either "hydrogen" or "ammonia".
-> For the illustrative case of Namibia, we have them in a folder titled "NA" with two sub-folders "hydrogen" and "ammonia".
 
 - **Conversion parameters:** `conversion_parameters.xlsx` includes parameters related to converting between states of the commodity. This is only needed in the "hydrogen" folder.
 
@@ -127,6 +149,11 @@ For each demand center, its lat-lon location, annual demand, and commodity state
 - **Technology parameters:** `technology_parameters.xlsx` includes water parameters, road infrastructure parameters, and whether road and pipeline construction is allowed.
 
 - **Transport parameters:** `transport_parameters.xlsx` includes the parameters related to road transport of the commodity, including truck speed, cost, lifetime, and capacity.
+
+> [!IMPORTANT]
+> The excel files must be kept in a sub-folder titled with the commodity name and placed within another folder titled with the respective Country ISO Code. 
+> As currently implemented, the commodity must be either "hydrogen" or "ammonia".
+> For the illustrative case of Namibia, we have them in a folder titled "NA" with two sub-folders "hydrogen" and "ammonia".
 ___
 
 # Running Geo-X with Snakemake
@@ -138,7 +165,8 @@ This repository uses [Snakemake](https://snakemake.readthedocs.io/en/stable/) to
 
 High-level workflow settings are controlled in the config file: `config.yaml`.
 
-**Wildcards:** These are used in the `scenario` section of the config file to specify the data used in the workflow. 
+**Wildcards:** These are used in the `scenario` section of the config file to specify the data used in the workflow.
+
 They can be changed to match the case you're analysing. They are: 
 - `country`: an ISO standard 2-letter abbreviation
 - `weather_year`: a 4-digit year between 1940 and 2023 included in the ERA5 dataset
@@ -146,23 +174,30 @@ They can be changed to match the case you're analysing. They are:
 
 **Weather data:**
 The amount of years you want to download weather data for should be added into `years_to_check`.
+
 For instance, if you want your weather data to start in 2015 and span five years, `weather_year` should be 2015 and `years_to_check` should be 5.
-You can set the frequency of data to be used in optimisation using `freq` (i.e., "1H" for hourly, "3H" for three-hourly, etc.)
+
+You can set the frequency of data to be used in optimisation using `freq` (i.e., "H" for hourly, "3H" for three-hourly, etc.)
 
 **Generators:**
 The types of renewable generators considered for plant construction are included in the `generators_dict` section. Currently, only Solar, Wind, and Hydro can be considered. Ensure that all the generators that you are considering are in the dictionary and remove any unnecessary ones.
+
 Dependent on which generators you are using, you can change the `panel` value for Solar and the `turbine` value for Wind.
-In the `gen_capacity` section, you will find both `solar` and `wind` and `hydro`, which can be changed to match values that you are analysing.
+
+In the `gen_capacity` section, you will find `solar` and `wind` and `hydro`, which can be changed to match values that you are analysing.
 
 **Other:**
 You will have to set the `solver` to the solver name that you are going to be using. 
+
 You will also have to set whether a `water_limit` is `True` or `False` (i.e., whether you want to consider water scarcity in your process).
+
 In the `transport` section, `pipeline_construction` and `road_construction` can be switched from `True` to `False`, as needed.
+
 Lastly, specify the `currency` used in most of your parameter files. For example, in `technology_parameters.xlsx`, under the `Water` sheet, there is a row titled `Water specific cost (euros/m3)`. You can edit this to reflect the desired currency, but ensure that you also update the `currency` value accordingly.
 
 > [!NOTE]
-> `country` and `weather_year` can be a list of more than one, depending on how many countries and years you are analysing. 
-> You must ensure all other input files that are needed for each country are where they should be as previously described.
+> `country` and `weather_year` can be a list of more than one, depending on how many countries and years you are analysing.
+> You must ensure all other input files that are needed for each country are where they should be, as previously described.
 
 ## 2) Run Geo-X rules
 
@@ -215,7 +250,6 @@ Please refer to the steps in the previous section for most usages.
 
 ### `get_weather_data` rule
 This will download weather data from your area of interest for generation optimization.
-Make sure you have run the `prep_main` rule before running this rule as it needs the outputted file as an input.
 ```
 snakemake -j [NUMBER OF CORES TO BE USED] run_weather
 ```

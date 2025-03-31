@@ -1,22 +1,32 @@
-import logging
+"""
+@authors:
+ - Samiyha Naqvi, University of Oxford, samiyha.naqvi@eng.ox.ac.uk
+ - Alycia Leonard, University of Oxford, alycia.leonard@eng.ox.ac.uk
+Includes code from Nicholas Salmon, University of Oxford, for setting up the 
+network.
+
+Class representing a PyPSA Network. Contains functions used for set up.
+"""
 import numpy as np
-import pandas as pd
 import pypsa
 
 from functions import CRF
 
 class Network:
     """
-    A class representing a Network.
+    A class representing a PyPSA Network.
 
+    ...
     Attributes
     ----------
     type : string
-        type of fuel demand. - maybe plant type instead of fuel type
+        type of commodity plant.
     generators : dictionary
-        contains generator types with their potential and maximum capacity.
-    n :
-        network. Default is None
+        keys - generator types, values - list of respective potential and 
+        maximum capacity.
+    n : pypsa Network Object
+        network. Default is None.
+
     Methods
     -------
     set_network(demand_profile, times, country_series):
@@ -26,22 +36,23 @@ class Network:
     _create_override_components():
         set up new component attributes as required.
     """
-    def __init__(self, type, generators):
+    def __init__(self, type, generators, n=None):
         """
-        
+        Provide an network object.
         """
         self.type = type
         self.generators = generators
-        self.n = None
+        self.n = n
 
     def set_network(self, demand_profile, times, country_series):
         '''
         Sets up the network.
-
+        
+        ...
         Parameters
         ----------
         demand_profile : pandas DataFrame
-            hourly dataframe of hydrogen demand in kg.
+            hourly dataframe of commodity demand in kg.
         times : xarray DataArray
             1D dataarray with timestamps for wind and solar potential.
         country_series: pandas Series
@@ -58,12 +69,12 @@ class Network:
             self.n.import_from_csv_folder("parameters/basic_h2_plant")
 
             # Import demand profile
-            # Note: All flows are in MW or MWh, conversions for hydrogen done using HHVs. Hydrogen HHV = 39.4 MWh/t
+            # Note: All flows are in MW or MWh, conversions for hydrogen done 
+            # using HHVs. Hydrogen HHV = 39.4 MWh/t
             self.n.add('Load',
                 'Hydrogen demand',
-                bus = 'Hydrogen',
-                p_set = demand_profile['Demand']/1000*39.4,  # Should clean up these parameters or at least comment re units
-                       # we probably want to make HHV an input in the end via snakemake or a file so this can be generalised
+                bus='Hydrogen',
+                p_set=demand_profile['Demand']/1000*39.4,
                 )
 
             for item in [self.n.links, self.n.stores, self.n.storage_units]:
@@ -79,44 +90,43 @@ class Network:
             self.n.import_from_csv_folder("parameters/basic_nh3_plant")
 
             # Import demand profile
-            # Note: All flows are in MW or MWh, conversions for hydrogen done using HHVs. Hydrogen HHV = 39.4 MWh/t
             # Note: All flows are in MW or MWh, conversions for ammonia done using HHVs. Ammonia HHV = 6.25 MWh/t
-            # hydrogen_demand = pd.read_excel(demand_path,index_col = 0) # Excel file in kg hydrogen, convert to MWh
             self.n.add('Load',
                 'Ammonia demand',
                 bus='Ammonia',
-                p_set=demand_profile['Demand'].to_numpy() / 1000 * 6.25,
+                p_set=demand_profile['Demand'].to_numpy()/1000*6.25,
                 )
             
             for item in [self.n.links, self.n.stores]:
-                item.capital_cost = item.capital_cost * CRF(country_series['Plant interest rate'],
-                                                            country_series['Plant lifetime (years)'])
-            self.n.links.loc['HydrogenCompression', 'marginal_cost'] = 0.0001  # Just stops pointless cycling through storage
+                item.capital_cost = item.capital_cost \
+                                    * CRF(country_series['Plant interest rate'],
+                                        country_series['Plant lifetime (years)'])
+            # Stops pointless cycling through storage
+            self.n.links.loc['HydrogenCompression', 'marginal_cost'] = 0.0001
 
     def set_generators_in_network(self, country_series):
         '''
         Sets provided generator in the network.
 
+        ...
         Parameters
         ----------
         country_series: pandas Series
             interest rate and lifetime information.
         '''
-        # Send the weather data to the model
+        # Send the generator data to the network
         for gen, gen_list in self.generators.items():
             self.n.generators_t.p_max_pu[gen.capitalize()] = gen_list[0]
 
-            # specify maximum capacity based on land use
-            self.n.generators.loc[gen.capitalize(),'p_nom_max'] = gen_list[1] # same as above
+            # Specify maximum capacity based on land use
+            self.n.generators.loc[gen.capitalize(),'p_nom_max'] = gen_list[1]
 
-            # specify technology-specific and country-specific WACC and lifetime here
-            ##### need hydro to be put into the country file as written below
+            # Specify technology-specific and country-specific WACC and lifetime here
             self.n.generators.loc[gen.capitalize(),'capital_cost'] *= \
                 CRF(country_series[f'{gen.capitalize()} interest rate'], 
                     country_series[f'{gen.capitalize()} lifetime (years)'])
 
     def _create_override_components(self):
-        # I assume this is just so that we can have hydrogen and power both as buses? Hmm
         """Set up new component attributes as required"""
         # Modify the capacity of a link so that it can attach to 2 buses.
         override_component_attrs = pypsa.descriptors.Dict(

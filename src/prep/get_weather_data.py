@@ -1,25 +1,18 @@
-# -*- coding: utf-8 -*-
 """
-Created on Sat Feb 25 15:11:47 2023
-
-@author: Claire Halloran, University of Oxford
-
-get_weather_data.py
+@authors: 
+ - Claire Halloran
+ - Samiyha Naqvi, University of Oxford, samiyha.naqvi@eng.ox.ac.uk
+ - Alycia Leonard, University of Oxford, alycia.leonard@eng.ox.ac.uk
 
 This script fetches historical weather data to calculate wind and solar potential
 from the ERA-5 reanalysis dataset using Atlite.
 
 Create cutouts with `atlite <https://atlite.readthedocs.io/en/latest/>`_.
-
-For this rule to work you must have
-
-- installed the `Copernicus Climate Data Store <https://cds.climate.copernicus.eu>`_ ``cdsapi`` package  (`install with `pip``) and
-- registered and setup your CDS API key as described on their website <https://cds.climate.copernicus.eu/api-how-to>
-
 """
-import logging
 import atlite
 import geopandas as gpd
+import logging
+
 from utils import check_folder_exists
 
 def calculate_coords(hexagons):
@@ -30,18 +23,18 @@ def calculate_coords(hexagons):
     Parameters
     ----------
     hexagons : geodataframe
-        Updated hexagon file from data folder.
+        hexagon file from data folder.
 
     Returns
     -------
-    min_lon : int
-        Mininum longitude
-    min_lat : int
-        Minimum latitude
-    max_lon : int
-        Maximum longitude
-    max_lat : int
-        Maximum latitude
+    min_lon : integer
+        mininum longitude.
+    min_lat : integer
+        minimum latitude.
+    max_lon : integer
+        maximum longitude.
+    max_lat : integer
+        maximum latitude.
     """
     hexagon_bounds = hexagons.geometry.bounds
     min_lon, min_lat = hexagon_bounds[['minx','miny']].min()
@@ -56,18 +49,18 @@ def prepare_cutout(min_lon, min_lat, max_lon, max_lat, start_date, end_date):
     ...
     Parameters
     ----------
-    min_lon : int
-        Mininum longitude
-    min_lat : int
-        Minimum latitude
-    max_lon : int
-        Maximum longitude
-    max_lat : int
-        Maximum latitude
+    min_lon : integer
+        mininum longitude.
+    min_lat : integer
+        minimum latitude.
+    max_lon : integer
+        maximum longitude.
+    max_lat : integer
+        maximum latitude.
     start_date : string
-        Start date for weather collection in 'YYYY-MM-DD' format
+        start date for weather collection in 'YYYY-MM-DD' format.
     end_date : string
-        End date for weather collection in 'YYYY-MM-DD' format
+        end date for weather collection in 'YYYY-MM-DD' format.
     """
     cutout = atlite.Cutout(
         path=str(snakemake.output),
