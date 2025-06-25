@@ -103,6 +103,16 @@ if __name__ == "__main__":
                 hexagons[f'{demand_center} {transport_method} H2 storage costs']/ \
                     demand_parameters.loc[demand_center, 'Annual demand [kg/a]']
             
+            # HB - ammonia only
+            if plant_type == "ammonia":
+                capital_cost_hb = links_parameters.loc['HB', 'capital_cost']
+                hexagons[f'{demand_center} {transport_method} HB costs'] = \
+                    hexagons[f'{demand_center} {transport_method} HB capacity'] *\
+                        capital_cost_hb * crf_plant
+                hexagons[f'{demand_center} LC - {transport_method} HB portion'] = \
+                    hexagons[f'{demand_center} {transport_method} HB costs']/ \
+                        demand_parameters.loc[demand_center, 'Annual demand [kg/a]']
+            
             # Work out CRF, then work out the cost for each generator using the data 
             # for the country you are looking at
             for generator in generators:

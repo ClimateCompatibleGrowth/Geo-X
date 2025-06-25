@@ -33,8 +33,10 @@ Note that Geo-X is implemented using [Snakemake](https://snakemake.readthedocs.i
 This lets you automate code execution using different "rules".
 When we refer to rules below, we're just talking about running different parts of the codebase that execute different functionalities.
 
+This installation requires Git for version control. If you don't have Git installed, please follow these [instructions](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git).
+
 ## 1) Clone the repository
-First, clone the Geo-X repository using `git`. 
+First, clone the Geo-X repository using Git. 
 
 `... % git clone https://github.com/ClimateCompatibleGrowth/Geo-X.git`
 
@@ -162,7 +164,7 @@ The amount of years you want to download weather data for should be added into `
 
 For instance, if you want your weather data to start in 2015 and span five years, `weather_year` should be 2015 and `years_to_check` should be 5.
 
-You can set the frequency of data to be used in optimisation using `freq` (i.e., "H" for hourly, "3H" for three-hourly, etc.)
+You can set the frequency of data to be used in optimisation using `freq` (i.e., "1H" for hourly, "3H" for three-hourly, etc.)
 
 **Generators:**
 

@@ -277,10 +277,7 @@ def get_h2_results(n, generators):
             generator_capacities[generator] = n.generators.p_nom_opt[generator.capitalize()]
     electrolyzer_capacity = n.links.p_nom_opt['Electrolysis']
     battery_capacity = n.storage_units.p_nom_opt['Battery']
-    if plant_type == "hydrogen":
-        h2_storage = n.stores.e_nom_opt['Compressed H2 Store']
-    else:
-        h2_storage = n.stores.e_nom_opt['CompressedH2Store']
+    h2_storage = n.stores.e_nom_opt['Compressed H2 Store']
     
     return lc, generator_capacities, electrolyzer_capacity, battery_capacity, h2_storage
 
@@ -321,8 +318,9 @@ def get_nh3_results(n, generators):
     h2_storage = n.stores.e_nom_opt['CompressedH2Store']
     # !!! need to save ammonia storage capacity as well
     nh3_storage = n.stores.e_nom_opt['Ammonia']
+    hb_capacity = n.links.p_nom_opt['HB']
 
-    return lc, generator_capacities, electrolyzer_capacity, battery_capacity, h2_storage, nh3_storage
+    return lc, generator_capacities, electrolyzer_capacity, battery_capacity, h2_storage, nh3_storage, hb_capacity
 
 def _nh3_pyomo_constraints(n, snapshots):
     """Includes a series of additional constraints which make the ammonia plant work as needed:
@@ -504,6 +502,8 @@ if __name__ == "__main__":
         if plant_type == "ammonia":
             t_nh3_storages = np.zeros(len_hexagons)
             p_nh3_storages = np.zeros(len_hexagons)
+            t_hb_capacities = np.zeros(len_hexagons)
+            p_hb_capacities = np.zeros(len_hexagons)
 
         annual_demand_quantity = demand_params.loc[demand_center,'Annual demand [kg/a]']
 
@@ -563,6 +563,8 @@ if __name__ == "__main__":
                             t_h2_storages[i] = np.nan
                             for gen, capacity in generators_capacities.items():
                                 t_generators_capacities[gen].append(np.nan)
+                            if plant_type == "ammonia": 
+                                t_nh3_storages[i], t_hb_capacities[i] = np.nan
                             continue
                     
                     network.set_generators_in_network(country_series)
@@ -575,7 +577,7 @@ if __name__ == "__main__":
                     elif plant_type == "ammonia":
                         trucking_lcs[i], generators_capacities, \
                         t_electrolyzer_capacities[i], t_battery_capacities[i], \
-                        t_h2_storages[i], t_nh3_storages[i]  = get_nh3_results(network.n, generators)
+                        t_h2_storages[i], t_nh3_storages[i], t_hb_capacities[i]  = get_nh3_results(network.n, generators)
                     
                     for gen, capacity in generators_capacities.items():
                         t_generators_capacities[gen].append(capacity)
@@ -587,7 +589,7 @@ if __name__ == "__main__":
                     for gen, capacity in generators_capacities.items():
                         t_generators_capacities[gen].append(np.nan)
                     if plant_type == "ammonia":
-                        t_nh3_storages[1] = np.nan
+                        t_nh3_storages[i], t_hb_capacities[i] = np.nan
 
                 # For pipeline, set it up with pipeline demand schedule if construction is true
                 else:
@@ -603,6 +605,8 @@ if __name__ == "__main__":
                                 p_h2_storages[i] = np.nan
                                 for gen, capacity in generators_capacities.items():
                                     p_generators_capacities[gen].append(np.nan)
+                                if plant_type == "ammonia": 
+                                    p_nh3_storages[i], p_hb_capacities[i] = np.nan
                                 continue
 
                         network.set_generators_in_network(country_series)
@@ -615,7 +619,7 @@ if __name__ == "__main__":
                         elif plant_type == "ammonia":
                             pipeline_lcs[i], generators_capacities, \
                             p_electrolyzer_capacities[i], p_battery_capacities[i], \
-                            p_h2_storages[i], p_nh3_storages[i] = get_nh3_results(network.n, generators)
+                            p_h2_storages[i], p_nh3_storages[i], p_hb_capacities[i] = get_nh3_results(network.n, generators)
 
                         for gen, capacity in generators_capacities.items():
                             p_generators_capacities[gen].append(capacity)
@@ -636,6 +640,8 @@ if __name__ == "__main__":
                                     p_h2_storages[i] = np.nan
                                     for gen, capacity in generators_capacities.items():
                                         p_generators_capacities[gen].append(np.nan)
+                                    if plant_type == "ammonia": 
+                                        p_nh3_storages[i], p_hb_capacities[i] = np.nan
                                     continue
 
                             network.set_generators_in_network(country_series)
@@ -648,7 +654,7 @@ if __name__ == "__main__":
                             elif plant_type == "ammonia":
                                 pipeline_lcs[i], generators_capacities, \
                                 p_electrolyzer_capacities[i], p_battery_capacities[i], \
-                                p_h2_storages[i], p_nh3_storages[i] = get_nh3_results(network.n, generators)
+                                p_h2_storages[i], p_nh3_storages[i], p_hb_capacities[i] = get_nh3_results(network.n, generators)
 
                             for gen, capacity in generators_capacities.items():
                                 p_generators_capacities[gen].append(capacity)
@@ -657,7 +663,7 @@ if __name__ == "__main__":
                             for gen in p_generators_capacities:
                                 p_generators_capacities[gen].append(np.nan)
                             if plant_type == "ammonia": 
-                                p_nh3_storages[1] = np.nan
+                                p_nh3_storages[i], p_hb_capacities[i] = np.nan
         
         print("\nOptimisation complete.\n")        
         # Updating trucking-based results in hexagon file
@@ -668,7 +674,8 @@ if __name__ == "__main__":
         hexagons[f'{demand_center} trucking H2 storage capacity'] = t_h2_storages
         hexagons[f'{demand_center} trucking production cost'] = trucking_lcs
         if plant_type == "ammonia":        
-            hexagons[f'{demand_center} pipeline NH3 storage capacity'] = t_nh3_storages
+            hexagons[f'{demand_center} trucking NH3 storage capacity'] = t_nh3_storages
+            hexagons[f'{demand_center} trucking HB capacity'] = t_hb_capacities
 
         # Updating pipeline-based results in hexagon file
         for gen, capacities in p_generators_capacities.items():
@@ -679,6 +686,6 @@ if __name__ == "__main__":
         hexagons[f'{demand_center} pipeline production cost'] = pipeline_lcs
         if plant_type == "ammonia":  
             hexagons[f'{demand_center} pipeline NH3 storage capacity'] = p_nh3_storages
-
+            hexagons[f'{demand_center} pipeline HB capacity'] = p_hb_capacities
 
     hexagons.to_file(str(snakemake.output), driver='GeoJSON', encoding='utf-8')

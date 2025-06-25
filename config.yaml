@@ -11,7 +11,7 @@ scenario:
 years_to_check: 1
 
 # Frequency of data:
-freq: '3H'
+freq: '1H'
 
 # Generators:
 # Modify 'generators_dict' to hold the generators you would like to use

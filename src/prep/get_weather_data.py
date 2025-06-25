@@ -70,7 +70,9 @@ def prepare_cutout(min_lon, min_lat, max_lon, max_lat, start_date, end_date):
         time=slice(start_date, end_date),
     )
     
-    cutout.prepare(tmpdir="temp", show_progress=True) # TEMPDIR DEFINITION IS NEW TO FIX ERROR
+    # Without monthly_requests=True, CDS can reject requests due to being 
+    # "too large"
+    cutout.prepare(tmpdir="temp", monthly_requests=True)
 
 def main():
     hexagons = gpd.read_file(str(snakemake.input.hexagons))
