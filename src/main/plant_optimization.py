@@ -423,9 +423,9 @@ if __name__ == "__main__":
     # Creating hydropower generator profile
     if "hydro" in generators:
         location_hydro = gpd.read_file(f'data/hydro/{snakemake.wildcards.country}_hydropower_dams.gpkg')
+        location_hydro['lat'] = location_hydro.geometry.y
+        location_hydro['lon'] = location_hydro.geometry.x
         hydrobasins = gpd.read_file('data/hydro/hybas_lev10_v1c.shp')
-        hydrobasins['lat'] = location_hydro.geometry.y
-        hydrobasins['lon'] = location_hydro.geometry.x
         
         runoff = cutout.hydro(
             plants=location_hydro,
