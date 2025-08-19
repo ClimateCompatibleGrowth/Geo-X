@@ -70,11 +70,10 @@ ___
 # Preparing input data
 
 Next, you'll need to prepare input data. 
-Geo-X has two types of input data: (1) spatial input data as a hexagon shapefile, and (2) techno-economic parameters in spreadsheets. If Hydro is to be used as a generator, you must include hydro-specific files in a `hydro` folder within the `data` folder.
+Geo-X has two types of input data: (1) spatial input data, and (2) techno-economic and plant parameters. If hydropower is to be used as a generator, you must include hydro-specific files; this is discussed in the next section.
 
 ## 1) Prepare input hexagons 
 First, prepare spatial input data as a set of hexagons using the [H3 standard](https://h3geo.org/).
-These hexagons are provided in the repository for the illustrative case study of Namibia.
 To analyse a different area of interest, the hexagon file needs to be changed, but needs to follow the logic of the one provided. 
 
 A full walkthrough on making these hexagons, including tools to create them, are available in the [Geo-X-data-prep](https://github.com/ClimateCompatibleGrowth/Geo-X-data-prep) repository.
@@ -88,7 +87,8 @@ The hexagon file needs to have the following attributes:
   - theo_wind: Theoretical potential of standardized wind turbines (can be determined with [GLAES](https://github.com/FZJ-IEK3-VSA/glaes))
 
 The [ccg-spider](https://github.com/carderne/ccg-spider) repository can be used to combine different spatial data into standard H3 hexagons.
-Once you have created a hexagon file with these features, save it in the `data` folder as `hex_final_[COUNTRY ISO CODE].geojson`. 
+
+Once you have created a hexagon file with these features, create a `[COUNTRY ISO CODE]` folder inside the `data` folder and place the file titled `hex_final_[COUNTRY ISO CODE].geojson` inside. 
 
 > [!IMPORTANT]
 > `COUNTRY ISO CODE` is the country's ISO standard 2-letter abbreviation.
@@ -96,12 +96,12 @@ Once you have created a hexagon file with these features, save it in the `data` 
 ### Hydro-specific files (Optional)
 The hydro-specific files can be obtained by running the [Geo-X-data-prep](https://github.com/ClimateCompatibleGrowth/Geo-X-data-prep) repository and from the [HydroBASINS section of HydroSHEDS](https://www.hydrosheds.org/products/hydrobasins).
 
-Create a `hydro` folder inside the `data` folder and place the following files inside it. You will need to rename them to match these:
+Create a `hydro` folder inside the `data/[COUNTRY ISO CODE]` folder and place the following files inside (you will need to rename one of the files to match the below requirement):
 - `[COUNTRY ISO CODE]_hydropower_dams.gpkg`
-- `hybas_lev10_v1c.shp`
+- All the files from the HydroBASINS download (or the Shapefile cannot be used)
 
 > [!NOTE]
-> You will notice that we have removed a region identifier from the title of `hybas_lev10_v1c.shp`. For example, it would be `hybas_af_lev10_v1c.shp` for Africa from the HydroSHEDS website. This change was made to generalise the code, allowing it to work across multiple regions without needing adjustments to the code.
+> You will need to do this step for every country you wish to run for.
 
 ## 2) Prepare input parameter Excel files
 Next, prepare the techno-economic input parameter spreadsheets.
@@ -111,7 +111,7 @@ The parameter values for running the model can be specified in a set of Excel fi
 
 - **Basic plant:** The `basic_[COMMODITY ABBREVIATION]_plant` folder contains several csv files with global parameters for optimizing the plant design. 
     - All power units are MW, and all energy units are MWh.
-    - The `generators.csv` file includes a row for hydro, which can be removed if hydro is not being used.
+    - The `generators.csv` file includes a row for `hydro`, which must be removed if hydropower is not being used.
 
 For more information on these parameters, refer to the [PyPSA documentation](https://pypsa.readthedocs.io/en/latest/components.html).
 
@@ -123,7 +123,7 @@ For more information on these parameters, refer to the [PyPSA documentation](htt
 - **Country parameters:** `country_parameters.xlsx` includes country- and technology-specific interest rates, heat and electricity costs, and asset lifetimes.
     - Interest rates should be expressed as a decimal (e.g. 5% as 0.05).
     - Asset lifetimes should be in years.
-    - The file contains columns related to hydro; these can be left empty if hydro is not being used.
+    - The file contains columns related to `hydro`; these can be left empty if hydropower is not being used.
 
 - **Demand parameters:** `demand_parameters.xlsx` includes a list of demand centers. 
 For each demand center, its lat-lon location, annual demand, and commodity state for that demand must be specified.
@@ -168,11 +168,11 @@ You can set the frequency of data to be used in optimisation using `freq` (i.e.,
 
 **Generators:**
 
-The types of renewable generators considered for plant construction are included in the `generators_dict` section. Currently, only Solar, Wind, and Hydro can be considered. Ensure that all the generators that you are considering are in the dictionary and remove any unnecessary ones.
+The types of renewable generators considered for plant construction are included in the `generators_dict` section. Currently, only `solar`, `wind`, and `hydro` can be considered. Ensure that all the generators that you are considering are in the dictionary and remove any unnecessary ones.
 
 Dependent on which generators you are using, you can change the `panel` value for Solar and the `turbine` value for Wind.
 
-In the `gen_capacity` section, you will find `solar` and `wind` and `hydro`, which can be changed to match values that you are analysing.
+In the `gen_capacity` section, you will find `solar` and `wind` and `hydro`, where the values can be changed to match the values that you are analysing.
 
 **Other:**
 

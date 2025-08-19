@@ -30,7 +30,7 @@ rule run_weather:
 
 rule get_weather_data:
     input:
-        hexagons = 'data/hex_final_{country}.geojson'
+        hexagons = 'data/{country}/hex_final_{country}.geojson'
     output:
         'cutouts/{country}_{weather_year}.nc',
     script:
@@ -38,7 +38,7 @@ rule get_weather_data:
 
 rule optimize_transport:
     input:
-        hexagons = 'data/hex_final_{country}.geojson',
+        hexagons = 'data/{country}/hex_final_{country}.geojson',
         technology_parameters = 'parameters/{country}/{plant_type}/technology_parameters.xlsx',
         demand_parameters = 'parameters/{country}/{plant_type}/demand_parameters.xlsx',
         country_parameters = 'parameters/{country}/{plant_type}/country_parameters.xlsx',
