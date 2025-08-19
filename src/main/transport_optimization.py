@@ -90,6 +90,10 @@ def main():
     if plant_type == "hydrogen":
         conversion_params_filepath = f'parameters/{snakemake.wildcards.country}/{snakemake.wildcards.plant_type}/conversion_parameters.xlsx'
     hexagons = gpd.read_file(str(snakemake.input.hexagons))
+    if hexagons.crs is None:
+        hexagons = hexagons.set_crs(epsg=4326)
+    elif hexagons.crs.to_epsg() != 4326:
+        hexagons = hexagons.to_crs(epsg=4326)
 
     infra_data = pd.read_excel(tech_params_filepath,
                            sheet_name='Infra',
