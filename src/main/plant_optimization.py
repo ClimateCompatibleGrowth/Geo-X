@@ -19,6 +19,7 @@ import pandas as pd
 import pyomo.environ as pm
 from scipy.constants import physical_constants
 import xarray as xr
+import glob
 
 from network import Network
 
@@ -425,7 +426,7 @@ if __name__ == "__main__":
         location_hydro = gpd.read_file(f'data/{snakemake.wildcards.country}/hydro/{snakemake.wildcards.country}_hydropower_dams.gpkg')
         location_hydro['lat'] = location_hydro.geometry.y
         location_hydro['lon'] = location_hydro.geometry.x
-        hydrobasins = gpd.read_file(f'data/{snakemake.wildcards.country}/hydro/hybas_*.shp')
+        hydrobasins = gpd.read_file(glob.glob(f'data/{snakemake.wildcards.country}/hydro/*.shp')[0])
         
         runoff = cutout.hydro(
             plants=location_hydro,
