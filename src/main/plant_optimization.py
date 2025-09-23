@@ -19,6 +19,7 @@ import pandas as pd
 import pyomo.environ as pm
 from scipy.constants import physical_constants
 import xarray as xr
+import glob
 
 from network import Network
 
@@ -203,8 +204,6 @@ def get_generator_profile(generator, cutout, layout, hexagons, freq):
         https://atlite.readthedocs.io/en/master/ref_api.html
     '''
     if generator == "solar":
-        # The panel string should be in the config file as well in case people want to change that in the prep and main.
-        # Alycia to double-check that the CSi is 1MW
         profile = cutout.pv(panel= str(snakemake.config["panel"]),
                             orientation='latitude_optimal',
                             layout = layout,
@@ -212,7 +211,6 @@ def get_generator_profile(generator, cutout, layout, hexagons, freq):
                             per_unit = True).resample(time=freq).mean()
         profile = profile.rename(dict(dim_0='hexagon'))
     elif generator == "wind":
-        # This string is what we should need to put in the config file (turbine) for both data prep, replacing the constant 4, replacing here.
         profile = cutout.wind(turbine = str(snakemake.config["turbine"]),
                             layout = layout,
                             shapes = hexagons,
@@ -422,10 +420,11 @@ if __name__ == "__main__":
     
     # Creating hydropower generator profile
     if "hydro" in generators:
+        print("Creating hydropower profile for network")
         location_hydro = gpd.read_file(f'data/{snakemake.wildcards.country}/hydro/{snakemake.wildcards.country}_hydropower_dams.gpkg')
         location_hydro['lat'] = location_hydro.geometry.y
         location_hydro['lon'] = location_hydro.geometry.x
-        hydrobasins = gpd.read_file(f'data/{snakemake.wildcards.country}/hydro/hybas_*.shp')
+        hydrobasins = gpd.read_file(glob.glob(f'data/{snakemake.wildcards.country}/hydro/*.shp')[0])
         
         runoff = cutout.hydro(
             plants=location_hydro,
@@ -435,7 +434,7 @@ if __name__ == "__main__":
             ).resample(time=freq).mean()
         
         # Efficiency of hydropower plant
-        eta = 0.75
+        eta = snakemake.config['efficiency']['hydro']
 
         capacity_factor = xr.apply_ufunc(
             hydropower_potential_with_capacity,
@@ -451,17 +450,16 @@ if __name__ == "__main__":
 
         hydro_hex_mapping = gpd.sjoin(location_hydro, hexagons, how='left', 
                                       predicate='within')
-        num_hexagons = len(hexagons)
         num_time_steps = len(capacity_factor.time)
 
         hydro_profile = xr.DataArray(
-            data=np.zeros((num_hexagons, num_time_steps)),
+            data=np.zeros((len_hexagons, num_time_steps)),
             dims=['hexagon', 'time'],
-            coords={'hexagon': np.arange(num_hexagons), 
+            coords={'hexagon': np.arange(len_hexagons), 
                     'time': capacity_factor.time}
             )
 
-        for hex_index in range(num_hexagons):
+        for hex_index in range(len_hexagons):
             plants_in_hex = hydro_hex_mapping[hydro_hex_mapping['index_right'] == hex_index].index.tolist()
             if len(plants_in_hex) > 0:
                 hex_capacity_factor = capacity_factor.sel(plant=plants_in_hex)
@@ -471,11 +469,36 @@ if __name__ == "__main__":
                 weighted_avg_capacity_factor = (hex_capacity_factor * weights).sum(dim='plant')
                 hydro_profile.loc[hex_index] = weighted_avg_capacity_factor
 
+    # Creating geothermal generator profile
+    if "geothermal" in generators:
+        print("Creating geothermal profile for network")
+        geo_locations = gpd.read_file(f'data/{snakemake.wildcards.country}/geothermal/{snakemake.wildcards.country}_geothermal_plants.gpkg')
+        geo_hex_mapping = gpd.sjoin(geo_locations, hexagons, how='left', 
+                                      predicate='within')
+        
+        geo_profile = xr.DataArray(
+            data=np.zeros((len_hexagons)),
+            dims=['hexagon'],
+            coords={'hexagon': np.arange(len_hexagons)}
+            )
+        
+        for hex_index in range(len_hexagons):
+            plants_in_hex = geo_hex_mapping[geo_hex_mapping['index_right'] == hex_index].index.tolist()
+            if len(plants_in_hex) > 0:
+                hex_capacity_factor = snakemake.config['efficiency']['geothermal']
+                plant_capacities = xr.DataArray(geo_locations.loc[plants_in_hex]['capacity'].values, dims=['plant'])
+
+                weights = plant_capacities / plant_capacities.sum()
+                weighted_avg_capacity_factor = (hex_capacity_factor * weights).sum(dim='plant')
+                geo_profile.loc[hex_index] = weighted_avg_capacity_factor
+
     # Adding generators into profiles list
     for gen in generators:
-         if gen == "hydro":
-            profiles.append(hydro_profile)         
-         else:
+        if gen == "hydro":
+            profiles.append(hydro_profile)
+        elif gen == "geothermal":
+            profiles.append(geo_profile) 
+        else:
             profiles.append(get_generator_profile(gen, cutout, layout, hexagons, freq))
     
     times = profiles[0].time
@@ -527,6 +550,8 @@ if __name__ == "__main__":
             for gen in generators:
                 if plant_type == "hydrogen":
                     potential = profiles[gen_index].sel(hexagon = i)
+                    print(f"THE TYPE OF {gen} POTENTIAL IS: ", type(potential))
+                    print(f"THE {gen} POTENTIAL IS: ",potential)
                 elif plant_type == "ammonia":
                     potential = profiles[gen_index].sel(hexagon=i, time=trucking_demand_schedule.index)
                 # -- Eventually make a for loop - we can change the theo_turbines name to be Wind
@@ -539,6 +564,8 @@ if __name__ == "__main__":
                 ##### elif added newly for hydro, need to double check the column name
                 elif gen == "hydro":
                     max_capacity = hexagons.loc[i,'hydro']*gen_capacity
+                elif gen == "geothermal":
+                    max_capacity = hexagons.loc[i,'geothermal']*gen_capacity
                 # -- Eventually move loops to something like this so we don't have ifs - max_capacity = hexagons.loc[i, gen] * SNAKEMAKE_CONFIG_GEN_SIZE
                 
                 generators[gen].append(potential)

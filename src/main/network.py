@@ -116,7 +116,10 @@ class Network:
         '''
         # Send the generator data to the network
         for gen, gen_list in self.generators.items():
-            self.n.generators_t.p_max_pu[gen.capitalize()] = gen_list[0]
+            if gen == "geothermal":
+                self.n.generators.loc[gen.capitalize(), "p_max_pu"] = gen_list[0]
+            else:
+                self.n.generators_t.p_max_pu[gen.capitalize()] = gen_list[0]
 
             # Specify maximum capacity based on land use
             self.n.generators.loc[gen.capitalize(),'p_nom_max'] = gen_list[1]

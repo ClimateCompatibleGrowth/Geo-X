@@ -61,18 +61,18 @@ You can use any solver that works with [PyPSA](https://pypsa.readthedocs.io/en/l
 Install your solver of choice following the instructions for use with Python and your operating system in the solver's documentation. 
 
 > [!NOTE]
-> Snakemake uses Cbc as a solver by default. 
-> This will be installed upon environment setup. 
-> To check that this is installed, activate your environment and enter `mamba list` in your terminal for the environment's list of packages.
-> If you choose to use Cbc, no additional solver needs to be installed.
+> Snakemake uses Cbc as a solver by default. This will be installed upon environment setup. To check that this is installed, activate your environment and enter `mamba list` in your terminal for the environment's list of packages. If you choose to use Cbc, no additional solver needs to be installed.
 ___
 
 # Preparing input data
 
 Next, you'll need to prepare input data. 
-Geo-X has two types of input data: (1) spatial input data, and (2) techno-economic and plant parameters. If hydropower is to be used as a generator, you must include hydro-specific files; this is discussed in the next section.
+Geo-X has two types of input data: (1) spatial input data, and (2) techno-economic and plant parameters. If you want hydropower or geothermal as generators, you must include certain files; these are discussed in the next section.
 
 ## 1) Prepare input hexagons 
+> [!NOTE]
+> You will need to complete this step (and optional parts, if necessary) for every country you wish to create files for.
+
 First, prepare spatial input data as a set of hexagons using the [H3 standard](https://h3geo.org/).
 To analyse a different area of interest, the hexagon file needs to be changed, but needs to follow the logic of the one provided. 
 
@@ -93,37 +93,40 @@ Once you have created a hexagon file with these features, create a `[COUNTRY ISO
 > [!IMPORTANT]
 > `COUNTRY ISO CODE` is the country's ISO standard 2-letter abbreviation.
 
-### Hydro-specific files (Optional)
-The hydro-specific files can be obtained by running the [Geo-X-data-prep](https://github.com/ClimateCompatibleGrowth/Geo-X-data-prep) repository and from the [HydroBASINS section of HydroSHEDS](https://www.hydrosheds.org/products/hydrobasins).
+### (Optional) Hydropower files 
+The hydropower files can be obtained by running the [Geo-X-data-prep](https://github.com/ClimateCompatibleGrowth/Geo-X-data-prep) repository and from the [HydroBASINS section of HydroSHEDS](https://www.hydrosheds.org/products/hydrobasins).
 
 Create a `hydro` folder inside the `data/[COUNTRY ISO CODE]` folder and place the following files inside (you will need to rename one of the files to match the below requirement):
 - `[COUNTRY ISO CODE]_hydropower_dams.gpkg`
 - All the files from the HydroBASINS download (or the Shapefile cannot be used)
 
-> [!NOTE]
-> You will need to do this step for every country you wish to run for.
+### (Optional) Geothermal GeoPackage file 
+The geothermal GeoPackage file can be obtained by running the [Geo-X-data-prep](https://github.com/ClimateCompatibleGrowth/Geo-X-data-prep) repository.
+
+Create a `geothermal` folder inside the `data/[COUNTRY ISO CODE]` folder and place the following file inside (you will need to rename it to match the following format):
+- `[COUNTRY ISO CODE]_geothermal_plants.gpkg`
 
 ## 2) Prepare input parameter Excel files
 Next, prepare the techno-economic input parameter spreadsheets.
 Required input parameters include the spatial area of interest, total annual demand for the commodity, and prices and cost of capital for infrastructure investments.
 These values can be either current values or projected values for a single snapshot in time.
-The parameter values for running the model can be specified in a set of Excel files in the `parameters` folder.
+The parameter values for running the model can be specified in a set of Excel and CSV files in the `parameters` folder. All files should be checked to ensure correct set up.
 
-- **Basic plant:** The `basic_[COMMODITY ABBREVIATION]_plant` folder contains several csv files with global parameters for optimizing the plant design. 
+- **Basic plant:** The `basic_[COMMODITY ABBREVIATION]_plant` folder contains several CSV files with global parameters for optimizing the plant design.
     - All power units are MW, and all energy units are MWh.
-    - The `generators.csv` file includes a row for `hydro`, which must be removed if hydropower is not being used.
+    - The `generators.csv` file **must only include** the generators that you wish to use in the optimisation.
 
 For more information on these parameters, refer to the [PyPSA documentation](https://pypsa.readthedocs.io/en/latest/components.html).
 
 > [!IMPORTANT]
 > `COMMODITY ABBREVIATION` can be 'h2' or 'nh3' for currently implemented commodities. 
 
-- **Conversion parameters:** `conversion_parameters.xlsx` includes parameters related to converting between states of the commodity. This is only needed in the "hydrogen" folder.
+- **Conversion parameters:** `conversion_parameters.xlsx` includes parameters related to converting between states of the commodity. This is only needed in the `hydrogen` folder.
 
 - **Country parameters:** `country_parameters.xlsx` includes country- and technology-specific interest rates, heat and electricity costs, and asset lifetimes.
     - Interest rates should be expressed as a decimal (e.g. 5% as 0.05).
     - Asset lifetimes should be in years.
-    - The file contains columns related to `hydro`; these can be left empty if hydropower is not being used.
+    - The file can contain columns related to generators not being considered.
 
 - **Demand parameters:** `demand_parameters.xlsx` includes a list of demand centers. 
 For each demand center, its lat-lon location, annual demand, and commodity state for that demand must be specified.
@@ -135,9 +138,9 @@ For each demand center, its lat-lon location, annual demand, and commodity state
 - **Transport parameters:** `transport_parameters.xlsx` includes the parameters related to road transport of the commodity, including truck speed, cost, lifetime, and capacity.
 
 > [!IMPORTANT]
-> The excel files must be kept in a sub-folder titled with the commodity name and placed within another folder titled with the respective Country ISO Code. 
-> As currently implemented, the commodity must be either "hydrogen" or "ammonia".
-> For the illustrative case of Namibia, we have them in a folder titled "NA" with two sub-folders "hydrogen" and "ammonia".
+> The Excel files must be kept in a sub-folder titled with the commodity name and that sub-folder should be within another folder titled with the respective Country ISO Code. 
+> As currently implemented, the commodity must be either `hydrogen` or `ammonia`.
+> For the illustrative case of Namibia, we have them in a folder titled `NA` with two sub-folders `hydrogen` and `ammonia`.
 ___
 
 # Running Geo-X with Snakemake
@@ -168,11 +171,15 @@ You can set the frequency of data to be used in optimisation using `freq` (i.e.,
 
 **Generators:**
 
-The types of renewable generators considered for plant construction are included in the `generators_dict` section. Currently, only `solar`, `wind`, and `hydro` can be considered. Ensure that all the generators that you are considering are in the dictionary and remove any unnecessary ones.
+The types of renewable generators considered for plant construction are included in the `generators_dict` section. Currently, only `solar`, `wind`, `hydro`, and `geothermal` can be considered. Ensure that all the generators that you are considering are in the dictionary and remove any unnecessary ones.
 
-Dependent on which generators you are using, you can change the `panel` value for Solar and the `turbine` value for Wind.
+Dependent on which generators you are using, you can change the `panel` value for solar and the `turbine` value for wind.
 
-In the `gen_capacity` section, you will find `solar` and `wind` and `hydro`, where the values can be changed to match the values that you are analysing.
+In the `gen_capacity` section, you will find `solar` and `wind`, `hydro`, and `geothermal`, where the values can be changed to match the values that you are analysing.
+
+**Efficiency of generator plants:** 
+
+Both `hydro` and `geothermal` efficiencies can be set here as necessary.
 
 **Other:**
 
@@ -190,7 +197,7 @@ Lastly, specify the `currency` used in most of your parameter files. For example
 
 ## 2) Run Geo-X rules
 
-Geo-X assumes that you will run it using Snakemake by entering rule names in the terminal. 
+Geo-X requires that you run it using Snakemake by entering rule names in the terminal. 
 When you do this, Snakemake will run all the necessary rules to achieve the rule you entered and create the desired output.
 Rules are defined in the `Snakefile`.
 
@@ -206,7 +213,7 @@ Ensure that you have space on your computer to store the data, which can be seve
 ### 1) Get weather data (if needed)
 
 If you already have weather data for your area of interest, just use step 2!
-If not, you need to run the weather data rule which will download the data you need from the CDS API: 
+If not, you need to run the weather data rule, which will download the data you need from the CDS API: 
 
 ```
 snakemake -j [NUMBER OF CORES TO BE USED] run_weather
@@ -218,8 +225,9 @@ Finally, run the Geo-X optimization process.
 These rules are used to run the whole process without having to go through each rule step-by-step.
 If any input files are changed after a completed run, the same command can be used again and Snakemake will only run the necessary scripts to ensure the results are up to date.
 
+Make sure you have the necessary weather file(s) in the `cutouts` folder before running, titled `[COUNTRY ISO CODE]_[WEATHER YEAR].nc` for each country.
+
 The total commodity cost for all scenarios can be run by entering the following rule into the terminal.
-Make sure you have the necessary weather file(s) in the cutouts folder before running. 
 ```
 snakemake -j [NUMBER OF CORES TO BE USED] optimise_all
 ```
