@@ -550,8 +550,6 @@ if __name__ == "__main__":
             for gen in generators:
                 if plant_type == "hydrogen":
                     potential = profiles[gen_index].sel(hexagon = i)
-                    print(f"THE TYPE OF {gen} POTENTIAL IS: ", type(potential))
-                    print(f"THE {gen} POTENTIAL IS: ",potential)
                 elif plant_type == "ammonia":
                     potential = profiles[gen_index].sel(hexagon=i, time=trucking_demand_schedule.index)
                 # -- Eventually make a for loop - we can change the theo_turbines name to be Wind
