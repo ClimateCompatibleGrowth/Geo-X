@@ -28,7 +28,7 @@ gen_capacity:
 # Efficiency of generator plants
 efficiency:
     hydro: 0.75
-    geothermal: 0.19375
+    geothermal: 0.9
 
 # Other:
 solver : 'gurobi'
