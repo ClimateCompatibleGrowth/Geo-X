@@ -163,7 +163,7 @@ They can be changed to match the case you're analysing. They are:
 
 **Weather data:**
 
-The amount of years you want to download weather data for should be added into `years_to_check`.
+The amount of years you want to download weather data for should be added into `years_to_check`. This value must be an integer.
 
 For instance, if you want your weather data to start in 2015 and span five years, `weather_year` should be 2015 and `years_to_check` should be 5.
 

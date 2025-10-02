@@ -7,7 +7,7 @@ scenario:
 
 # Weather data:
 # Change to a number that would be added to the 'weather_year' above and used as
-# the end weather year date
+# the end weather year date. Must be an integer.
 years_to_check: 1
 
 # Frequency of data:
@@ -38,5 +38,5 @@ transport:
     pipeline_construction: True
     road_construction: True
 
-# Make sure this matches the currency used in most of your parameter files
+# Make sure this matches the currency used in your parameter files
 currency: 'euros'

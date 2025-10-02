@@ -82,9 +82,9 @@ def main():
     min_lon, min_lat, max_lon, max_lat = calculate_coords(hexagons)
 
     start_weather_year = int(snakemake.wildcards.weather_year)
-    end_weather_year = int(snakemake.wildcards.weather_year)+int(snakemake.config["years_to_check"])
+    end_weather_year = int(snakemake.wildcards.weather_year)+int(snakemake.config["years_to_check"]-1)
     start_date = f'{start_weather_year}-01-01'
-    end_date = f'{end_weather_year}-01-01'
+    end_date = f'{end_weather_year}-12-31'
 
     check_folder_exists("cutouts")
     check_folder_exists("temp")

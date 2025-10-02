@@ -90,7 +90,7 @@ def get_demand_schedule(quantity, start_date, end_date, transport_state, transpo
         hourly demand profile for pipeline transport.
     '''
     # Schedule for pipeline
-    index = pd.date_range(start_date, end_date, freq = freq)
+    index = pd.date_range(start_date, end_date, freq = freq, inclusive='left')
     pipeline_hourly_quantity = quantity/index.size
     pipeline_hourly_demand_schedule = pd.DataFrame(pipeline_hourly_quantity, index=index,  columns=['Demand'])
     # Resample pipeline schedule
@@ -107,7 +107,7 @@ def get_demand_schedule(quantity, start_date, end_date, transport_state, transpo
         # as only one hexagon will have no trucking happening in it
         annual_deliveries = 365*24
         trucking_hourly_demand = quantity/annual_deliveries
-        index = pd.date_range(start_date, end_date, periods=annual_deliveries)
+        index = pd.date_range(start_date, end_date, periods=annual_deliveries, inclusive='left')
         trucking_demand_schedule = pd.DataFrame(trucking_hourly_demand, index=index, columns=['Demand'])
         # First create hourly schedule
         trucking_hourly_demand_schedule = trucking_demand_schedule.resample('H').sum().fillna(0.)
@@ -124,7 +124,7 @@ def get_demand_schedule(quantity, start_date, end_date, transport_state, transpo
         # Schedule for trucking
         annual_deliveries = quantity/truck_capacity
         quantity_per_delivery = quantity/annual_deliveries
-        index = pd.date_range(start_date, end_date, periods=annual_deliveries)
+        index = pd.date_range(start_date, end_date, periods=annual_deliveries, inclusive='left')
         trucking_demand_schedule = pd.DataFrame(quantity_per_delivery, index=index, columns=['Demand'])
         # First create hourly schedule
         trucking_hourly_demand_schedule = trucking_demand_schedule.resample('H').sum().fillna(0.)
@@ -329,7 +329,7 @@ def _nh3_pyomo_constraints(n, snapshots):
     v) Ramp soft constraints up
     (iv) and (v) just softly suppress ramping so that the model doesn't 'zig-zag', which looks a bit odd on operation.
     Makes very little difference on LCOA. """
-    timestep = int(snakemake.config['freq'][0])
+    timestep = int(snakemake.config['freq'].split('H')[0])
     # The battery constraint is built here - it doesn't need a special function because it doesn't depend on time
     n.model.battery_interface = pm.Constraint(
         rule=lambda model: n.model.link_p_nom['BatteryInterfaceIn'] ==
@@ -356,7 +356,7 @@ def _nh3_pyomo_constraints(n, snapshots):
 
 def _nh3_ramp_down(model, t):
     """Places a cap on how quickly the ammonia plant can ramp down"""
-    timestep = int(snakemake.config['freq'][0])
+    timestep = int(snakemake.config['freq'].split('H')[0])
     if t == model.t.at(1):
 
         old_rate = model.link_p['HB', model.t.at(-1)]
@@ -371,7 +371,7 @@ def _nh3_ramp_down(model, t):
 
 def _nh3_ramp_up(model, t):
     """Places a cap on how quickly the ammonia plant can ramp down"""
-    timestep = int(snakemake.config['freq'][0])
+    timestep = int(snakemake.config['freq'].split('H')[0])
     if t == model.t.at(1):
         old_rate = model.link_p['HB', model.t.at(-1)]
     else:
@@ -501,7 +501,6 @@ if __name__ == "__main__":
         else:
             profiles.append(get_generator_profile(gen, cutout, layout, hexagons, freq))
     
-    times = profiles[0].time
     plant_type = str(snakemake.wildcards.plant_type)
 
     # Loop through all demand centers
@@ -548,10 +547,7 @@ if __name__ == "__main__":
             
             # Get the max capacity for each generation type
             for gen in generators:
-                if plant_type == "hydrogen":
-                    potential = profiles[gen_index].sel(hexagon = i)
-                elif plant_type == "ammonia":
-                    potential = profiles[gen_index].sel(hexagon=i, time=trucking_demand_schedule.index)
+                potential = profiles[gen_index].sel(hexagon=i)
                 # -- Eventually make a for loop - we can change the theo_turbines name to be Wind
                 gen_capacity = int(snakemake.config['gen_capacity'][f'{gen}'])
                 if gen == "wind":
@@ -577,7 +573,7 @@ if __name__ == "__main__":
 
                 # If trucking is viable
                 if transport == "trucking" and pd.isnull(trucking_state) == False:
-                    network.set_network(trucking_demand_schedule, times, country_series)
+                    network.set_network(trucking_demand_schedule, country_series,)
 
                     # Check for water constraint before any solving occurs
                     if water_limit != False:
@@ -619,7 +615,7 @@ if __name__ == "__main__":
                 # For pipeline, set it up with pipeline demand schedule if construction is true
                 else:
                     if pipeline_construction == True:
-                        network.set_network(pipeline_demand_schedule, times, country_series)
+                        network.set_network(pipeline_demand_schedule, country_series)
 
                         # Check for water constraint before any solving occurs
                         if water_limit != False:
@@ -654,7 +650,7 @@ if __name__ == "__main__":
                     else:
                         # -- Demand location has trucking state as None, this is an easy check
                         if trucking_state == "None":
-                            network.set_network(pipeline_demand_schedule, times, country_series)
+                            network.set_network(pipeline_demand_schedule, country_series)
 
                             # Check for water constraint before any solving occurs
                             if water_limit != False:
