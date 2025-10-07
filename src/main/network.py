@@ -44,7 +44,7 @@ class Network:
         self.generators = generators
         self.n = n
 
-    def set_network(self, demand_profile, times, country_series):
+    def set_network(self, demand_profile, country_series):
         '''
         Sets up the network.
         
@@ -53,18 +53,19 @@ class Network:
         ----------
         demand_profile : pandas DataFrame
             hourly dataframe of commodity demand in kg.
-        times : xarray DataArray
-            1D dataarray with timestamps for wind and solar potential.
         country_series: pandas Series
             interest rate and lifetime information.
         '''
-        # Set the time values for the network
+        # Set standard Network, if none provided
         if self.n == None:
             self.n = pypsa.Network(override_component_attrs=self._create_override_components())
+        
+        # Set the time values for the network
+        self.n.set_snapshots(demand_profile.index)
+        demand_profile['weights'] = 8760 / len(self.n.snapshots)
+        self.n.snapshot_weightings = demand_profile['weights']
 
         if self.type == "hydrogen":
-            self.n.set_snapshots(times)
-
             # Import the design of the H2 plant into the network
             self.n.import_from_csv_folder("parameters/basic_h2_plant")
 
@@ -81,11 +82,6 @@ class Network:
                 item.capital_cost = item.capital_cost * CRF(country_series['Plant interest rate'], 
                                                             country_series['Plant lifetime (years)'])
         elif self.type == "ammonia":
-            # Set the time values for the network
-            self.n.set_snapshots(demand_profile.index)
-            demand_profile['weights'] = 8760 / len(self.n.snapshots)
-            self.n.snapshot_weightings = demand_profile['weights']
-
             # Import the design of the NH3 plant into the network
             self.n.import_from_csv_folder("parameters/basic_nh3_plant")
 
@@ -116,7 +112,10 @@ class Network:
         '''
         # Send the generator data to the network
         for gen, gen_list in self.generators.items():
-            self.n.generators_t.p_max_pu[gen.capitalize()] = gen_list[0]
+            if gen == "geothermal":
+                self.n.generators.loc[gen.capitalize(), "p_max_pu"] = gen_list[0]
+            else:
+                self.n.generators_t.p_max_pu[gen.capitalize()] = gen_list[0]
 
             # Specify maximum capacity based on land use
             self.n.generators.loc[gen.capitalize(),'p_nom_max'] = gen_list[1]

@@ -3,3 +3,4 @@ Wind,Power,Slack,TRUE,0,1.53E+06,0
 Solar,Power,PQ,TRUE,0,1.42E+06,0
 RampDummy,RampPenalty,Slack,TRUE,1.00E+04,0.00E+00,1.00E+00
 Hydro,Power,Slack,TRUE,0,2327920,0
+Geothermal,Power,Slack,TRUE,0,2.00E+07,0

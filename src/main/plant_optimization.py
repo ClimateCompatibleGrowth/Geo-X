@@ -90,7 +90,7 @@ def get_demand_schedule(quantity, start_date, end_date, transport_state, transpo
         hourly demand profile for pipeline transport.
     '''
     # Schedule for pipeline
-    index = pd.date_range(start_date, end_date, freq = freq)
+    index = pd.date_range(start_date, end_date, freq = freq, inclusive='left')
     pipeline_hourly_quantity = quantity/index.size
     pipeline_hourly_demand_schedule = pd.DataFrame(pipeline_hourly_quantity, index=index,  columns=['Demand'])
     # Resample pipeline schedule
@@ -107,7 +107,7 @@ def get_demand_schedule(quantity, start_date, end_date, transport_state, transpo
         # as only one hexagon will have no trucking happening in it
         annual_deliveries = 365*24
         trucking_hourly_demand = quantity/annual_deliveries
-        index = pd.date_range(start_date, end_date, periods=annual_deliveries)
+        index = pd.date_range(start_date, end_date, periods=annual_deliveries, inclusive='left')
         trucking_demand_schedule = pd.DataFrame(trucking_hourly_demand, index=index, columns=['Demand'])
         # First create hourly schedule
         trucking_hourly_demand_schedule = trucking_demand_schedule.resample('H').sum().fillna(0.)
@@ -124,7 +124,7 @@ def get_demand_schedule(quantity, start_date, end_date, transport_state, transpo
         # Schedule for trucking
         annual_deliveries = quantity/truck_capacity
         quantity_per_delivery = quantity/annual_deliveries
-        index = pd.date_range(start_date, end_date, periods=annual_deliveries)
+        index = pd.date_range(start_date, end_date, periods=annual_deliveries, inclusive='left')
         trucking_demand_schedule = pd.DataFrame(quantity_per_delivery, index=index, columns=['Demand'])
         # First create hourly schedule
         trucking_hourly_demand_schedule = trucking_demand_schedule.resample('H').sum().fillna(0.)
@@ -204,8 +204,6 @@ def get_generator_profile(generator, cutout, layout, hexagons, freq):
         https://atlite.readthedocs.io/en/master/ref_api.html
     '''
     if generator == "solar":
-        # The panel string should be in the config file as well in case people want to change that in the prep and main.
-        # Alycia to double-check that the CSi is 1MW
         profile = cutout.pv(panel= str(snakemake.config["panel"]),
                             orientation='latitude_optimal',
                             layout = layout,
@@ -213,7 +211,6 @@ def get_generator_profile(generator, cutout, layout, hexagons, freq):
                             per_unit = True).resample(time=freq).mean()
         profile = profile.rename(dict(dim_0='hexagon'))
     elif generator == "wind":
-        # This string is what we should need to put in the config file (turbine) for both data prep, replacing the constant 4, replacing here.
         profile = cutout.wind(turbine = str(snakemake.config["turbine"]),
                             layout = layout,
                             shapes = hexagons,
@@ -332,7 +329,7 @@ def _nh3_pyomo_constraints(n, snapshots):
     v) Ramp soft constraints up
     (iv) and (v) just softly suppress ramping so that the model doesn't 'zig-zag', which looks a bit odd on operation.
     Makes very little difference on LCOA. """
-    timestep = int(snakemake.config['freq'][0])
+    timestep = int(snakemake.config['freq'].split('H')[0])
     # The battery constraint is built here - it doesn't need a special function because it doesn't depend on time
     n.model.battery_interface = pm.Constraint(
         rule=lambda model: n.model.link_p_nom['BatteryInterfaceIn'] ==
@@ -359,7 +356,7 @@ def _nh3_pyomo_constraints(n, snapshots):
 
 def _nh3_ramp_down(model, t):
     """Places a cap on how quickly the ammonia plant can ramp down"""
-    timestep = int(snakemake.config['freq'][0])
+    timestep = int(snakemake.config['freq'].split('H')[0])
     if t == model.t.at(1):
 
         old_rate = model.link_p['HB', model.t.at(-1)]
@@ -374,7 +371,7 @@ def _nh3_ramp_down(model, t):
 
 def _nh3_ramp_up(model, t):
     """Places a cap on how quickly the ammonia plant can ramp down"""
-    timestep = int(snakemake.config['freq'][0])
+    timestep = int(snakemake.config['freq'].split('H')[0])
     if t == model.t.at(1):
         old_rate = model.link_p['HB', model.t.at(-1)]
     else:
@@ -423,6 +420,7 @@ if __name__ == "__main__":
     
     # Creating hydropower generator profile
     if "hydro" in generators:
+        print("Creating hydropower profile for network")
         location_hydro = gpd.read_file(f'data/{snakemake.wildcards.country}/hydro/{snakemake.wildcards.country}_hydropower_dams.gpkg')
         location_hydro['lat'] = location_hydro.geometry.y
         location_hydro['lon'] = location_hydro.geometry.x
@@ -436,7 +434,7 @@ if __name__ == "__main__":
             ).resample(time=freq).mean()
         
         # Efficiency of hydropower plant
-        eta = 0.75
+        eta = snakemake.config['efficiency']['hydro']
 
         capacity_factor = xr.apply_ufunc(
             hydropower_potential_with_capacity,
@@ -452,17 +450,16 @@ if __name__ == "__main__":
 
         hydro_hex_mapping = gpd.sjoin(location_hydro, hexagons, how='left', 
                                       predicate='within')
-        num_hexagons = len(hexagons)
         num_time_steps = len(capacity_factor.time)
 
         hydro_profile = xr.DataArray(
-            data=np.zeros((num_hexagons, num_time_steps)),
+            data=np.zeros((len_hexagons, num_time_steps)),
             dims=['hexagon', 'time'],
-            coords={'hexagon': np.arange(num_hexagons), 
+            coords={'hexagon': np.arange(len_hexagons), 
                     'time': capacity_factor.time}
             )
 
-        for hex_index in range(num_hexagons):
+        for hex_index in range(len_hexagons):
             plants_in_hex = hydro_hex_mapping[hydro_hex_mapping['index_right'] == hex_index].index.tolist()
             if len(plants_in_hex) > 0:
                 hex_capacity_factor = capacity_factor.sel(plant=plants_in_hex)
@@ -472,14 +469,38 @@ if __name__ == "__main__":
                 weighted_avg_capacity_factor = (hex_capacity_factor * weights).sum(dim='plant')
                 hydro_profile.loc[hex_index] = weighted_avg_capacity_factor
 
+    # Creating geothermal generator profile
+    if "geothermal" in generators:
+        print("Creating geothermal profile for network")
+        geo_locations = gpd.read_file(f'data/{snakemake.wildcards.country}/geothermal/{snakemake.wildcards.country}_geothermal_plants.gpkg')
+        geo_hex_mapping = gpd.sjoin(geo_locations, hexagons, how='left', 
+                                      predicate='within')
+        
+        geo_profile = xr.DataArray(
+            data=np.zeros((len_hexagons)),
+            dims=['hexagon'],
+            coords={'hexagon': np.arange(len_hexagons)}
+            )
+        
+        for hex_index in range(len_hexagons):
+            plants_in_hex = geo_hex_mapping[geo_hex_mapping['index_right'] == hex_index].index.tolist()
+            if len(plants_in_hex) > 0:
+                hex_capacity_factor = snakemake.config['efficiency']['geothermal']
+                plant_capacities = xr.DataArray(geo_locations.loc[plants_in_hex]['capacity'].values, dims=['plant'])
+
+                weights = plant_capacities / plant_capacities.sum()
+                weighted_avg_capacity_factor = (hex_capacity_factor * weights).sum(dim='plant')
+                geo_profile.loc[hex_index] = weighted_avg_capacity_factor
+
     # Adding generators into profiles list
     for gen in generators:
-         if gen == "hydro":
-            profiles.append(hydro_profile)         
-         else:
+        if gen == "hydro":
+            profiles.append(hydro_profile)
+        elif gen == "geothermal":
+            profiles.append(geo_profile) 
+        else:
             profiles.append(get_generator_profile(gen, cutout, layout, hexagons, freq))
     
-    times = profiles[0].time
     plant_type = str(snakemake.wildcards.plant_type)
 
     # Loop through all demand centers
@@ -526,10 +547,7 @@ if __name__ == "__main__":
             
             # Get the max capacity for each generation type
             for gen in generators:
-                if plant_type == "hydrogen":
-                    potential = profiles[gen_index].sel(hexagon = i)
-                elif plant_type == "ammonia":
-                    potential = profiles[gen_index].sel(hexagon=i, time=trucking_demand_schedule.index)
+                potential = profiles[gen_index].sel(hexagon=i)
                 # -- Eventually make a for loop - we can change the theo_turbines name to be Wind
                 gen_capacity = int(snakemake.config['gen_capacity'][f'{gen}'])
                 if gen == "wind":
@@ -540,6 +558,8 @@ if __name__ == "__main__":
                 ##### elif added newly for hydro, need to double check the column name
                 elif gen == "hydro":
                     max_capacity = hexagons.loc[i,'hydro']*gen_capacity
+                elif gen == "geothermal":
+                    max_capacity = hexagons.loc[i,'geothermal']*gen_capacity
                 # -- Eventually move loops to something like this so we don't have ifs - max_capacity = hexagons.loc[i, gen] * SNAKEMAKE_CONFIG_GEN_SIZE
                 
                 generators[gen].append(potential)
@@ -553,7 +573,7 @@ if __name__ == "__main__":
 
                 # If trucking is viable
                 if transport == "trucking" and pd.isnull(trucking_state) == False:
-                    network.set_network(trucking_demand_schedule, times, country_series)
+                    network.set_network(trucking_demand_schedule, country_series,)
 
                     # Check for water constraint before any solving occurs
                     if water_limit != False:
@@ -595,7 +615,7 @@ if __name__ == "__main__":
                 # For pipeline, set it up with pipeline demand schedule if construction is true
                 else:
                     if pipeline_construction == True:
-                        network.set_network(pipeline_demand_schedule, times, country_series)
+                        network.set_network(pipeline_demand_schedule, country_series)
 
                         # Check for water constraint before any solving occurs
                         if water_limit != False:
@@ -630,7 +650,7 @@ if __name__ == "__main__":
                     else:
                         # -- Demand location has trucking state as None, this is an easy check
                         if trucking_state == "None":
-                            network.set_network(pipeline_demand_schedule, times, country_series)
+                            network.set_network(pipeline_demand_schedule, country_series)
 
                             # Check for water constraint before any solving occurs
                             if water_limit != False:
