@@ -1,6 +1,9 @@
 # Geo-X
 **Geospatial analysis of commodity production costs**
 
+> [!IMPORTANT]
+> This version of the repository requires weather data to be collected again when you use for the first time, regardless of if you have collected weather data using this repository before.
+
 Geo-X calculates the locational cost of production, storage, transport, and conversion of different commodities to meet demand in a specified location.
 These costs can be compared to current or projected prices in the region under study to assess competitiveness. 
 Currently, green hydrogen and green ammonia are implemented as commodities in Geo-X. 
