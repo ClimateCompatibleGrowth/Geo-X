@@ -69,9 +69,9 @@ def plot_and_save(crs, hexagons, name, legend_kwds, output_folder, figsize=(10,5
 
 if __name__ == "__main__":
     currency = snakemake.config["currency"]
-    plant_type = str(snakemake.wildcards.plant_type)
-    hexagons = gpd.read_file(str(snakemake.input.hexagons))
-    demand_excel_path = str(snakemake.input.demand_parameters)
+    plant_type = snakemake.wildcards.plant_type
+    hexagons = gpd.read_file(snakemake.input.hexagons)
+    demand_excel_path = snakemake.input.demand_parameters
     demand_parameters = pd.read_excel(demand_excel_path,index_col='Demand center')
     demand_centers = demand_parameters.index
     transport_methods = ["trucking", "pipeline"]
@@ -85,7 +85,7 @@ if __name__ == "__main__":
     central_lat = (min_lat + max_lat)/2
 
     crs = ccrs.Orthographic(central_longitude = central_lon, central_latitude= central_lat)
-    generators = dict(snakemake.config['generators_dict'])
+    generators = snakemake.config['generators_dict']
 
     output_folder = str(snakemake.output)
     check_folder_exists(output_folder)
@@ -96,11 +96,48 @@ if __name__ == "__main__":
         # Lowest LC in each location
         plot_and_save(crs, hexagons, f'{demand_center} lowest cost', 
                     {'label' : f'LC [{currency}/kg]'}, output_folder)
+        
+        # Production cost
+        plot_and_save(crs, hexagons, f'{demand_center} production cost',
+                    {'label' : f'Production LC [{currency}/kg]'}, output_folder)
+        
+         # Electrolyzer capacity
+        plot_and_save(crs, hexagons, f'{demand_center} electrolyzer capacity',
+                    {'label': 'Size (MW)'}, output_folder)
+    
+        # Electrolyzer costs
+        plot_and_save(crs, hexagons, f'{demand_center} electrolyzer costs',
+                    {'label': f'{currency}'}, output_folder)
 
+        # H2 storage capacity
+        plot_and_save(crs, hexagons, f'{demand_center} H2 storage capacity',
+                    {'label': 'Size (MW)'}, output_folder)
+    
+        # H2 storage costs
+        plot_and_save(crs, hexagons, f'{demand_center} H2 storage costs',
+                    {'label': f'{currency}'}, output_folder)
+        
+        # Battery capcity
+        plot_and_save(crs, hexagons, f'{demand_center} battery capacity', 
+                    {'label': 'Size (MW)'}, output_folder)
+    
+        # Battery costs
+        plot_and_save(crs, hexagons, f'{demand_center} battery costs',
+                    {'label': f'{currency}'}, output_folder)
+
+        for generator in generators:
+            # Generator capacity
+            plot_and_save(crs, hexagons, f'{demand_center} {generator} capacity',
+                        {'label': 'Capacity (MW)'}, output_folder)
+    
+            # Generator costs
+            plot_and_save(crs, hexagons, f'{demand_center} {generator} costs',
+                        {'label': f'{currency}'}, output_folder)
+        
         for transport_method in transport_methods:
-            # Trucking/ pipeline production cost
-            plot_and_save(crs, hexagons, f'{demand_center} {transport_method} production cost',
-                        {'label' : f'Production LC [{currency}/kg]'}, output_folder)
+            # Trucking/pipeline total cost
+            plot_and_save(crs, hexagons, f'{demand_center} {transport_method} total cost',
+                        {'label': f'LC [{currency}/kg]'}, output_folder)
 
             # Trucking/ pipeline costs
             if plant_type == "hydrogen":
@@ -126,43 +163,6 @@ if __name__ == "__main__":
                     plot_and_save(crs, hexagons, f'{demand_center} {transport_method} transport costs', 
                                 {'label': f'{transport_method} cost [{currency}/kg]'}, output_folder)
 
-            # Total cost
-            plot_and_save(crs, hexagons, f'{demand_center} {transport_method} total cost',
-                        {'label': f'LC [{currency}/kg]'}, output_folder)
-
-            # Electrolyzer capacity
-            plot_and_save(crs, hexagons, f'{demand_center} {transport_method} electrolyzer capacity',
-                        {'label': 'Size (MW)'}, output_folder)
-        
-            # Electrolyzer costs
-            plot_and_save(crs, hexagons, f'{demand_center} {transport_method} electrolyzer costs',
-                        {'label': f'{currency}'}, output_folder)
-
-            # H2 storage capacity
-            plot_and_save(crs, hexagons, f'{demand_center} {transport_method} H2 storage capacity',
-                        {'label': 'Size (MW)'}, output_folder)
-        
-            # H2 storage costs
-            plot_and_save(crs, hexagons, f'{demand_center} {transport_method} H2 storage costs',
-                        {'label': f'{currency}'}, output_folder)
-            
-            # Battery capcity
-            plot_and_save(crs, hexagons, f'{demand_center} {transport_method} battery capacity', 
-                        {'label': 'Size (MW)'}, output_folder)
-        
-            # Battery costs
-            plot_and_save(crs, hexagons, f'{demand_center} {transport_method} battery costs',
-                        {'label': f'{currency}'}, output_folder)
-
-            for generator in generators:
-                # Generator capacity
-                plot_and_save(crs, hexagons, f'{demand_center} {transport_method} {generator} capacity',
-                            {'label': 'Capacity (MW)'}, output_folder)
-        
-                # Generator costs
-                plot_and_save(crs, hexagons, f'{demand_center} {transport_method} {generator} costs',
-                            {'label': f'{currency}'}, output_folder)
-        
     # Ocean water costs
     plot_and_save(crs, hexagons, 'Ocean water costs',
                 {'label': f'Water cost [{currency}/kg H2]'}, output_folder)

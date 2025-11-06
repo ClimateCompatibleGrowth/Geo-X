@@ -12,9 +12,9 @@ import pandas as pd
 
 def main():
     print("Calculations begin...\n")
-    hexagons = gpd.read_file(str(snakemake.input.hexagons))
-    tech_params_filepath = str(snakemake.input.technology_parameters)
-    country_params_filepath = str(snakemake.input.country_parameters)
+    hexagons = gpd.read_file(snakemake.input.hexagons)
+    tech_params_filepath = snakemake.input.technology_parameters
+    country_params_filepath = snakemake.input.country_parameters
 
     water_data = pd.read_excel(tech_params_filepath, sheet_name='Water', index_col='Parameter').squeeze("columns")
     country_params = pd.read_excel(country_params_filepath, index_col='Country')

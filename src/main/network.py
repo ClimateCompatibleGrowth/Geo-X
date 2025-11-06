@@ -52,7 +52,7 @@ class Network:
         Parameters
         ----------
         demand_profile : pandas DataFrame
-            hourly dataframe of commodity demand in kg.
+            dataframe of commodity demand in kg in frequency configured.
         country_series: pandas Series
             interest rate and lifetime information.
         '''
@@ -86,11 +86,12 @@ class Network:
             self.n.import_from_csv_folder("parameters/basic_nh3_plant")
 
             # Import demand profile
-            # Note: All flows are in MW or MWh, conversions for ammonia done using HHVs. Ammonia HHV = 6.25 MWh/t
+            # Note: All flows are in MW or MWh, conversions for ammonia done 
+            # using HHVs. Ammonia HHV = 6.25 MWh/t
             self.n.add('Load',
                 'Ammonia demand',
                 bus='Ammonia',
-                p_set=demand_profile['Demand'].to_numpy()/1000*6.25,
+                p_set=demand_profile['Demand']/1000*6.25,
                 )
             
             for item in [self.n.links, self.n.stores]:

@@ -13,12 +13,12 @@ import pandas as pd
 from utils import check_folder_exists
 
 def main():
-    hexagons = gpd.read_file(str(snakemake.input.hexagons))
-    demand_params_filepath = str(snakemake.input.demand_parameters)
+    hexagons = gpd.read_file(snakemake.input.hexagons)
+    demand_params_filepath = snakemake.input.demand_parameters
     demand_center_list = pd.read_excel(demand_params_filepath,
                                     index_col='Demand center')
     demand_centers = demand_center_list.index
-    plant_type = str(snakemake.wildcards.plant_type)
+    plant_type = snakemake.wildcards.plant_type
 
     check_folder_exists("results")
 
@@ -35,11 +35,11 @@ def main():
         hexagons[f'{demand_center} trucking total cost'] =\
             hexagons[f'{demand_center} road construction costs'] +\
                 trucking_tranport_costs +\
-                    hexagons[f'{demand_center} trucking production cost'] +\
+                    hexagons[f'{demand_center} production cost'] +\
                         hexagons['Lowest water cost']
         hexagons[f'{demand_center} pipeline total cost'] =\
                 pipeline_transport_costs +\
-                    hexagons[f'{demand_center} pipeline production cost'] +\
+                    hexagons[f'{demand_center} production cost'] +\
                         hexagons['Lowest water cost']
 
         # Get the lowest between the trucking and the pipeline options

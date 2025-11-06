@@ -25,14 +25,19 @@ gen_capacity:
     hydro: 1
     geothermal: 1
 
-# Efficiency of generator plants
+# Efficiency of generator plants:
 efficiency:
     hydro: 0.75
     geothermal: 0.9
 
 # Other:
 solver : 'gurobi'
-water_limit: False
+
+water:
+    has_limit: False
+    # Enter annual limit on water available for electrolysis, in 
+    # cubic meters if above is True
+    annual_limit: 
 
 transport:
     pipeline_construction: True

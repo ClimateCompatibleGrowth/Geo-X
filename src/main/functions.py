@@ -89,20 +89,20 @@ def calculate_trucking_costs(transport_state, distance, quantity, interest,
 
     # Calculate deliveries needed per day
     amount_deliveries_needed = daily_quantity/net_capacity
+    rounded_up_deliveries_needed = np.ceil(amount_deliveries_needed)
     # Calculate how many deliveries each truck can do per day
     deliveries_per_truck = working_hours/(loading_unloading_time +
                                           (2 * distance/average_truck_speed))
     
     # Deliveries per day / Deliveries per truck = Trucks per day
-    # 0.5 is used to round up so full demand is met
-    trailors_needed = round((amount_deliveries_needed/
-                             deliveries_per_truck) + 0.5)
-    total_drives_day = round(amount_deliveries_needed + 0.5)
+    trailors_needed = np.ceil(amount_deliveries_needed/
+                             deliveries_per_truck)
+    total_drives_day = rounded_up_deliveries_needed
     if transport_state == 'NH3':
         trucks_needed = trailors_needed
     else:
-        trucks_needed = max(round((total_drives_day * 2 * distance *
-                                        working_days/max_driving_dist) + 0.5),
+        trucks_needed = max(np.ceil(total_drives_day * 2 * distance *
+                                        working_days/max_driving_dist),
                                             trailors_needed)
     # Get the capex of all the trucks and trailors needed
     capex_trucks = trucks_needed * spec_capex_truck
@@ -116,9 +116,9 @@ def calculate_trucking_costs(transport_state, distance, quantity, interest,
         wages = amount_deliveries_needed * ((distance/average_truck_speed) *
                     2 + loading_unloading_time) * working_days * costs_for_driver
     else:
-        fuel_costs = (round(amount_deliveries_needed + 0.5) *
-                        2 * distance * 365/100) * diesel_consumption * diesel_price
-        wages = round(amount_deliveries_needed + 0.5) * (
+        fuel_costs = (rounded_up_deliveries_needed * 2 * distance * 
+                      365/100) * diesel_consumption * diesel_price
+        wages = rounded_up_deliveries_needed * (
                     (distance/average_truck_speed) * 2 + loading_unloading_time
                     ) * working_days * costs_for_driver
     # Get total annual costs including capex, fuel costs, wages
@@ -287,8 +287,6 @@ def h2_conversion_stand(final_state, quantity, electricity_costs, heat_costs,
                                     capex_NH3_plant * opex_NH3_plant +\
                                         elec_demand * electricity_costs +\
                                             heat_demand * heat_costs
-        else:
-            raise NotImplementedError(f'Conversion costs for {final_state} not currently supported.')
         
     return elec_demand, heat_demand, annual_costs
 
@@ -423,20 +421,23 @@ def cheapest_pipeline_strategy(final_state, quantity, distance,
     -------
     costs_per_unit : float
         storage, conversion, and transport costs for the cheapest option.
-    cheapest_option : string
-        the lowest-cost state in which to transport hydrogen by truck.
+    pipeline_size : string
+        size of pipeline to build.
     '''
+    pipeline_costs, pipeline_size = pipeline_costs(distance, quantity, 
+                                                   elec_cost_grid, 
+                                                   pipeline_params_filepath, 
+                                                   interest, currency)
     if final_state == 'NH3':
-        dist_costs_pipeline = pipeline_costs(distance,quantity, elec_cost_grid, pipeline_params_filepath, interest, currency)[0] +\
+        dist_costs_pipeline = pipeline_costs +\
                 h2_conversion_stand(final_state+'_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]  
     else:
-        dist_costs_pipeline = pipeline_costs(distance, quantity, elec_cost_grid, pipeline_params_filepath, interest, currency)[0] +\
+        dist_costs_pipeline = pipeline_costs +\
                 h2_conversion_stand(final_state, quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
 
     costs_per_unit = dist_costs_pipeline/quantity
-    cheapest_option = pipeline_costs(distance, quantity, elec_cost_grid, pipeline_params_filepath, interest, currency)[1] 
-
-    return costs_per_unit, cheapest_option
+    
+    return costs_per_unit, pipeline_size
 
 
 def pipeline_costs(distance, quantity, elec_cost, pipeline_params_filepath, 
@@ -584,11 +585,9 @@ def calculate_nh3_pipeline_costs(distance, quantity, elec_cost,
                                     index_col = 'Parameter'
                                     ).squeeze('columns')
     y_int = pipeline_parameters[f'Capex y-intercept ({currency}/t/yr/100km)']
-    print(y_int)
     slope = pipeline_parameters[f'Capex flow coefficient ({currency}/t^2/yr^2/100km)']
-    print(slope)
     capex_coeff = (y_int + slope*quantity_per_pipeline)
-    print(capex_coeff)
+
     # Distance coefficients are per 100 km
     capex_annual = (n_pipelines*(capex_coeff*distance/100*quantity_per_pipeline)*CRF(interest,lifetime_pipeline))
     opex_annual = opex*n_pipelines*(capex_coeff*distance/100*quantity_per_pipeline)

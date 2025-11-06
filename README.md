@@ -188,7 +188,7 @@ Both `hydro` and `geothermal` efficiencies can be set here as necessary.
 
 You will have to set the `solver` to the solver name that you are going to be using. 
 
-You will also have to set whether a `water_limit` is `True` or `False` (i.e., whether you want to consider water scarcity in your process).
+In the `water` section, `has_limit` can be switched from `False` to `True` (i.e., whether you want to consider water scarcity in your process), and `annual_limit` can be defined in cubic meters.
 
 In the `transport` section, `pipeline_construction` and `road_construction` can be switched from `True` to `False`, as needed.
 
