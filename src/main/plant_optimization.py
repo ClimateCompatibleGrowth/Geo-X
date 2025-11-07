@@ -61,85 +61,6 @@ def hydropower_potential_with_capacity(flowrate, head, capacity, eta):
 
     return capacity_factor
 
-def get_h2_results(n, generators):
-    '''
-    Get final results from network optimisation
-
-    ...
-    Parameters
-    ----------
-    n : network Object
-        network.
-    generators : dictionary
-        contains types of generators that this plant uses.
-
-    Returns
-    -------
-    lc : float
-        levelized cost per kg commodity.
-    generator_capactities : dictionary
-        contains each generator with their optimal capacity in MW.
-    electrolyzer_capacity : float
-        optimal electrolyzer capacity in MW.
-    battery_capacity : float
-        optimal battery storage capacity in MW/MWh (1 hour batteries).
-    h2_storage : float
-        optimal hydrogen storage capacity in MWh.
-    '''
-    generator_capacities = {}
-    # Convert back to kg H2
-    lc = n.objective/(n.loads_t.p_set.sum()[0]/39.4*1000)
-    for generator in generators:
-            generator_capacities[generator] = n.generators.p_nom_opt[generator.capitalize()]
-    electrolyzer_capacity = n.links.p_nom_opt['Electrolysis']
-    battery_capacity = n.storage_units.p_nom_opt['Battery']
-    h2_storage = n.stores.e_nom_opt['Compressed H2 Store']
-    
-    return lc, generator_capacities, electrolyzer_capacity, battery_capacity, h2_storage
-
-def get_nh3_results(n, generators):
-    '''
-    Get final results from network optimisation
-
-    ...
-    Parameters
-    ----------
-    n : network Object
-        network.
-    generators : list
-        contains types of generators that this plant uses.
-
-    Returns
-    -------
-    lc : float
-        levelized cost per kg commodity.
-    generator_capactities : dictionary
-        contains each generator with their optimal capacity in MW.
-    electrolyzer_capacity : float
-        optimal electrolyzer capacity in MW.
-    battery_capacity : float
-        optimal battery storage capacity in MW/MWh (1 hour batteries).
-    h2_storage : float
-        optimal hydrogen storage capacity in MWh.
-    nh3_storage : float
-        optimal ammonia storage capacity in MWh.
-    hb_capacity : float
-        optimal Haber-Bosch capacity in MWh.
-    '''
-    generator_capacities = {}
-    lc = n.objective / ((n.loads_t.p_set['Ammonia demand'] * n.snapshot_weightings[
-        'objective']).sum() / 6.25 * 1000)  # convert back to kg NH3
-    for generator in generators:
-            generator_capacities[generator] = n.generators.p_nom_opt[generator.capitalize()]
-    electrolyzer_capacity = n.links.p_nom_opt['Electrolysis']
-    battery_capacity = n.stores.e_nom_opt['Battery']
-    h2_storage = n.stores.e_nom_opt['CompressedH2Store']
-    # !!! need to save ammonia storage capacity as well
-    nh3_storage = n.stores.e_nom_opt['Ammonia']
-    hb_capacity = n.links.p_nom_opt['HB']
-
-    return lc, generator_capacities, electrolyzer_capacity, battery_capacity, h2_storage, nh3_storage, hb_capacity
-
 def _nh3_pyomo_constraints(n, snapshots):
     """Includes a series of additional constraints which make the ammonia plant work as needed:
     i) Battery sizing
@@ -359,6 +280,7 @@ if __name__ == "__main__":
             hb_capacities = np.zeros(len_hexagons)
 
         annual_demand_quantity = float(demand_params.loc[demand_center,'Annual demand [kg/a]'])
+        total_demand = annual_demand_quantity*years
 
         # Loop through all hexagons
         for i in range(len_hexagons):
@@ -370,7 +292,7 @@ if __name__ == "__main__":
             
             # Creating demand schedule
             demand_schedule_index = pd.date_range(start_date, end_date, freq = "1H", inclusive='left')
-            freq_demand_quantity = (annual_demand_quantity*years)/demand_schedule_index.size
+            freq_demand_quantity = total_demand/demand_schedule_index.size
             demand_schedule = pd.DataFrame(freq_demand_quantity, index=demand_schedule_index, columns=['Demand'])
             demand_resampled_schedule = demand_schedule.resample(freq).mean()
             
@@ -445,7 +367,7 @@ if __name__ == "__main__":
                 nh3_storages[i] = network_class.n.stores.e_nom_opt['Ammonia']
                 hb_capacities[i] = network_class.n.links.p_nom_opt['HB']
 
-            lcs[i] = network_class.n.objective/annual_demand_quantity*years
+            lcs[i] = network_class.n.objective/total_demand
             electrolyzer_capacities[i] = network_class.n.links.p_nom_opt['Electrolysis']
             battery_capacities[i] = network_class.n.stores.e_nom_opt['Battery']
 
