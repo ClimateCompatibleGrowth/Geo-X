@@ -424,15 +424,15 @@ def cheapest_pipeline_strategy(final_state, quantity, distance,
     pipeline_size : string
         size of pipeline to build.
     '''
-    pipeline_costs, pipeline_size = pipeline_costs(distance, quantity, 
+    pipeline_cost, pipeline_size = pipeline_costs(distance, quantity, 
                                                    elec_cost_grid, 
                                                    pipeline_params_filepath, 
                                                    interest, currency)
     if final_state == 'NH3':
-        dist_costs_pipeline = pipeline_costs +\
+        dist_costs_pipeline = pipeline_cost +\
                 h2_conversion_stand(final_state+'_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]  
     else:
-        dist_costs_pipeline = pipeline_costs +\
+        dist_costs_pipeline = pipeline_cost +\
                 h2_conversion_stand(final_state, quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
 
     costs_per_unit = dist_costs_pipeline/quantity
