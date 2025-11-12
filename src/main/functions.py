@@ -598,3 +598,57 @@ def calculate_nh3_pipeline_costs(distance, quantity, elec_cost,
     cost_per_unit = annual_costs/(quantity*1000)
 
     return cost_per_unit, f"{pipeline_type} Pipeline"
+
+def mineral_conversion_facility(final_state, quantity, interest,
+                                conversion_params_filepath):
+    """
+    Calculate the CAPEX cost and OPEX cost of a new mineral processing facility
+    as annual equivalent value (euros/kg)
+
+    Parameters
+    ----------
+    final_state : TYPE
+        DESCRIPTION.
+    quantity : TYPE
+        DESCRIPTION.
+    interest : TYPE
+        DESCRIPTION.
+    
+    Returns
+    -------
+    None.
+
+    """
+    conversion_params = pd.read_excel(conversion_params_filepath,
+                                             sheet_name = final_state,
+                                             index_col = 'Parameter'
+                                             ).squeeze('columns')
+    plant_lifetime = conversion_params['Plant lifetime (years)']
+    capex_exp_coef_A = conversion_params["CapEx exp coef A (euros/tonne)"]
+    capex_exp_coef_B = conversion_params["CapEx exp coef B (euros/tonne)"]
+    capex_exp_coef_k = conversion_params["CapEx exp coef k (1/tonne)"]
+    
+    # Proposed exponential function as used by Baptiste in cost curve analysis
+    # tot_capex = (capex_exp_coef_A*np.exp(-capex_exp_coef_k*(quantity/1000)) + capex_exp_coef_B) * (quantity/1000) * plant_lifetime
+    
+    # the cost curve analysis showed a flat relationship between cost and facility capacities greater than 20,000 tonnes
+    # for version 1 a flat rate for capex based on CapEx exp coef B is used until a better function/data can be identified
+    
+    # to include the affect of interest rate, a fixed 10% is assumed to have been used in analysis of coef_B
+    tot_capex = (capex_exp_coef_B * (quantity / 1000)) / CRF(0.1, plant_lifetime)
+    
+    # equivalent annual levilised capex
+    annual_capex = tot_capex * CRF(interest, plant_lifetime)
+    capex_per_unit = annual_capex / quantity
+        
+    # opex cost - based on baptiste breakdown    
+    opex_df = conversion_params.loc[["Opex Labor (euros/tonne)",
+                                         "Opex Reagents (euros/tonne)",
+                                         "Opex Corporate overhead (euros/tonne)",
+                                         "Opex Other (euros/tonne)",
+                                         "Opex Royalties (euros/tonne)"]]
+    annual_opex = opex_df.sum() * (quantity/1000)
+    opex_per_unit = annual_opex / quantity
+    
+    
+    return capex_per_unit, opex_per_unit

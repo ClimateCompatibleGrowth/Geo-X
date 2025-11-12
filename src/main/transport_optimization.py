@@ -18,7 +18,7 @@ import shapely.wkt
 
 from functions import CRF, cheapest_trucking_strategy, h2_conversion_stand, \
                             cheapest_pipeline_strategy, calculate_trucking_costs, \
-                            calculate_nh3_pipeline_costs
+                            calculate_nh3_pipeline_costs, mineral_conversion_facility
 from utils import check_folder_exists
 
 def main():
@@ -28,7 +28,7 @@ def main():
     country_params_filepath = snakemake.input.country_parameters
     transport_params_filepath = snakemake.input.transport_parameters
     pipeline_params_filepath = snakemake.input.pipeline_parameters
-    if plant_type == "hydrogen":
+    if plant_type == "hydrogen" or plant_type == "minx":
         conversion_params_filepath = f'parameters/{snakemake.wildcards.country}/{snakemake.wildcards.plant_type}/conversion_parameters.xlsx'
 
     infra_data = pd.read_excel(tech_params_filepath,
@@ -52,6 +52,7 @@ def main():
 
     needs_pipeline_construction = snakemake.config["transport"]["pipeline_construction"]
     needs_road_construction = snakemake.config["transport"]["road_construction"]
+    needs_rail_construction = snakemake.config["transport"]["rail_construction"]
 
     long_road_capex = infra_data.at['Long road','CAPEX']
     short_road_capex = infra_data.at['Short road','CAPEX']
@@ -80,10 +81,15 @@ def main():
 
         # Storage arrays containing zeros to be filled with costs and states or
         # left as zeros, as necessary
-        road_construction_costs = np.zeros(len_hexagons)
-        trucking_states = np.zeros(len_hexagons,dtype='<U10')
-        trucking_costs = np.zeros(len_hexagons)
-        pipeline_costs = np.zeros(len_hexagons)
+        if plant_type == 'minx':
+            facility_annual_cost_per_kg = np.zeros(len_hexagons)
+            facility_annual_capex = np.zeros(len_hexagons)
+            facility_annual_opex = np.zeros(len_hexagons)
+        else:
+            road_construction_costs = np.zeros(len_hexagons)
+            trucking_states = np.zeros(len_hexagons,dtype='<U10')
+            trucking_costs = np.zeros(len_hexagons)
+            pipeline_costs = np.zeros(len_hexagons)
 
         if demand_state not in ['500 bar', 'LH2', 'NH3', 'LOHC']:
             raise NotImplementedError(f'{demand_state} demand not supported.')
@@ -104,13 +110,25 @@ def main():
             #!!! maybe this is the place to set a restriction based on distance to demand center-- for all hexagons with a distance below some cutoff point
             # label demand location under consideration
             # Different calculations dependent if in demand location or not
+            
+            # Facility costs need same calculation for all hexagons
+            if plant_type == "minx":
+                if hex_geometry.contains(demand_location) == True or demand_center_list.loc[demand_center,'Restrict Hexagons'] == False:
+                    facility_annual_capex[i], facility_annual_opex[i] = mineral_conversion_facility(demand_state,
+                                                                annual_demand_quantity,
+                                                                plant_interest_rate,
+                                                                conversion_params_filepath)
+                    facility_annual_cost_per_kg[i] = facility_annual_capex + facility_annual_opex
 
             # If the hexagon contains the demand location:
             if hex_geometry.contains(demand_location) == True:
-                # Calculate cost of converting hydrogen to a demand state for local demand (i.e. no transport)
-                # State changed to "None" to label the hexagon that contains the demand center
                 # Leave road construction cost as 0, as no road is needed
-                if plant_type == "hydrogen":
+                if plant_type == 'minx':
+                    pass
+                # Calculate cost of converting hydrogen to a demand state for local demand (i.e. no transport)
+                # State changed to label the hexagon with which demand center it contains
+                # Leave road construction cost as 0, as no road is needed
+                elif plant_type == "hydrogen":
                     if demand_state == 'NH3':
                         trucking_costs[i]=pipeline_costs[i]=h2_conversion_stand(demand_state+'_load',
                                                 annual_demand_quantity,
@@ -120,7 +138,7 @@ def main():
                                                 conversion_params_filepath,
                                                 currency
                                                 )[2]/annual_demand_quantity
-                        trucking_states[i] = "None"
+                        trucking_states[i] = f"{demand_center} hexagon"
                     else:
                         trucking_costs[i]=pipeline_costs[i]=h2_conversion_stand(demand_state,
                                                 annual_demand_quantity,
@@ -130,12 +148,22 @@ def main():
                                                 conversion_params_filepath,
                                                 currency
                                                 )[2]/annual_demand_quantity
-                        trucking_states[i] = "None"
+                        trucking_states[i] = f"{demand_center} hexagon"
                 # Leave the costs as 0 for ammonia, just change state
                 elif plant_type == "ammonia":
-                    trucking_states[i] = "None"
+                    trucking_states[i] = f"{demand_center} hexagon"
             # Else, if the hexagon does not contain the demand center:
             else:
+                if plant_type == 'minx':
+                    # Forces only consideration of the demand center hexagon
+                    if demand_center_list.loc[demand_center,'Restrict Hexagons']:
+                            facility_annual_cost_per_kg[i] = np.nan
+                            facility_annual_capex[i] = np.nan
+                            facility_annual_opex[i] = np.nan
+
+                            # road costs
+                            road_construction_costs[i] = np.nan
+
                 # Calculate costs of constructing a pipeline to the hexagon if allowed
                 if needs_pipeline_construction== True:
                     if plant_type == "hydrogen":
@@ -209,14 +237,38 @@ def main():
 
         print("\nOptimisation complete.\n")
         # Hexagon file updated with each demand center's costs and states
-        hexagons[f'{demand_center} road construction costs'] = road_construction_costs
-        if plant_type == "hydrogen":
-            hexagons[f'{demand_center} trucking transport and conversion costs'] = trucking_costs
-            hexagons[f'{demand_center} pipeline transport and conversion costs'] = pipeline_costs
-        elif plant_type == "ammonia":
-            hexagons[f'{demand_center} trucking transport costs'] = trucking_costs
-            hexagons[f'{demand_center} pipeline transport costs'] = pipeline_costs
-        hexagons[f'{demand_center} trucking state'] = trucking_states
+        if plant_type == 'minx':
+            pass
+            # facility costs
+            # Below this with up to the space have been calculated
+            hexagons[f'{demand_center} annual facility costs ({currency}/kg/year)'] = facility_annual_cost_per_kg
+            hexagons[f'{demand_center} annual facility capex ({currency}/kg/year)'] = facility_annual_capex
+            hexagons[f'{demand_center} annual facility opex ({currency}/kg/year)'] = facility_annual_opex
+            # ------above done
+
+            # road costs
+            hexagons[f'{demand_center} road construction costs (euros/kg/year)'] = road_construction_costs / product_quantity
+            hexagons[f'{demand_center} Total road transport costs (euros/kg/year)'] = total_trucking_costs / product_quantity  # cost of road construction, supply conversion, trucking transport, and demand conversion
+            hexagons[f'{demand_center} feedstock trucking transport costs (euros/kg/year)'] = feedstock_trucking_costs / product_quantity  # cost of road construction, supply conversion, trucking transport, and demand conversion
+            hexagons[f'{demand_center} product trucking transport costs (euros/kg/year)'] = demand_trucking_costs / product_quantity  # cost of road construction, supply conversion, trucking transport, and demand conversion
+            # rail costs
+            hexagons[f'{demand_center} rail construction costs (euros/kg/year)'] = rail_construction_costs / product_quantity
+            hexagons[f'{demand_center} Total rail transport costs (euros/kg/year)'] = total_train_costs / product_quantity  # cost of rail construction, supply conversion, train transport, and demand conversion
+            hexagons[f'{demand_center} feedstock train transport costs (euros/kg/year)'] = feedstock_train_costs / product_quantity  # cost of road construction, supply conversion, trucking transport, and demand conversion
+            hexagons[f'{demand_center} product train transport costs (euros/kg/year)'] = demand_train_costs / product_quantity  # cost of road construction, supply conversion, trucking transport, and demand conversion
+
+            hexagons[f'{demand_center} feedstock quantity (kg/year)'] = feedstock_quantities
+            hexagons[f'{demand_center} feedstock cost (euros/kg/year)'] = feedstock_costs / product_quantity
+            hexagons[f'{demand_center} feedstock locs'] = feedstock_locs
+        else:
+            hexagons[f'{demand_center} road construction costs'] = road_construction_costs
+            if plant_type == "hydrogen":
+                hexagons[f'{demand_center} trucking transport and conversion costs'] = trucking_costs
+                hexagons[f'{demand_center} pipeline transport and conversion costs'] = pipeline_costs
+            elif plant_type == "ammonia":
+                hexagons[f'{demand_center} trucking transport costs'] = trucking_costs
+                hexagons[f'{demand_center} pipeline transport costs'] = pipeline_costs
+            hexagons[f'{demand_center} trucking state'] = trucking_states
 
     hexagons.to_file(str(snakemake.output), driver='GeoJSON', encoding='utf-8')
 
