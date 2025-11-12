@@ -76,12 +76,12 @@ def main():
                                         + water_transport_cost * water_usages_L[i] * ocean_dist/100)
                 ocean_water_cost_per_kg_product[i] = ocean_water_costs[i] / annual_demand_quantity
 
-                lowest_cost[i] = np.min(ocean_water_costs[i], freshwater_costs[i])
+                lowest_cost[i] = np.min(ocean_water_cost_per_kg_product[i], freshwater_cost_per_kg_product[i])
 
             hexagons[f'{demand_center} water usage (L)': water_usages_L]
             hexagons[f'{demand_center} freshwater cost ({currency}/kg/year)': freshwater_cost_per_kg_product]
             hexagons[f'{demand_center} ocean water cost ({currency}/kg/year)': ocean_water_cost_per_kg_product]
-            hexagons[f'{demand_center} lowest water cost ({currency})': lowest_cost]
+            hexagons[f'{demand_center} lowest water cost ({currency}/kg/year)': lowest_cost]
     else:
         # Calculating water costs for each hexagon
         for i in range(len_hexagons):
