@@ -139,7 +139,6 @@ if __name__ == "__main__":
     solver = snakemake.config['solver']
     generators = snakemake.config['generators_dict']
     hexagons = gpd.read_file(snakemake.input.hexagons)
-    needs_pipeline_construction = snakemake.config['transport']['pipeline_construction']
 
     # Get a uniform capacity layout for all grid cells. https://atlite.readthedocs.io/en/master/ref_api.html
     cutout_filepath = f'cutouts/{snakemake.wildcards.country}_{snakemake.wildcards.weather_year}.nc'
@@ -285,8 +284,6 @@ if __name__ == "__main__":
         # Loop through all hexagons
         for i in range(len_hexagons):
             print(f"\nCurrently optimising {i+1} of {len_hexagons} hexagons...")
-            trucking_state = hexagons.loc[i, f'{demand_center} trucking state']
-            pipeline_transport_costs = hexagons.loc[i, f'{demand_center} pipeline transport costs']
             gen_index = 0
             generators = deepcopy(snakemake.config['generators_dict'])
             
@@ -354,7 +351,8 @@ if __name__ == "__main__":
                     pyomo=False,
                     )
                 
-                h2_storages[i] = network_class.n.stores.e_nom_opt['CompressedH2Store']
+                h2_storages[i] = network_class.n.stores.e_nom_opt['Compressed H2 Store']
+                battery_capacities[i] = network_class.n.storage_units.p_nom_opt['Battery']
             elif plant_type == "ammonia":
                 # Solve 
                 network_class.n.lopf(solver_name=solver,
@@ -366,10 +364,10 @@ if __name__ == "__main__":
                 # !!! need to save ammonia storage capacity as well
                 nh3_storages[i] = network_class.n.stores.e_nom_opt['Ammonia']
                 hb_capacities[i] = network_class.n.links.p_nom_opt['HB']
+                battery_capacities[i] = network_class.n.stores.e_nom_opt['Battery']
 
             lcs[i] = network_class.n.objective/total_demand
             electrolyzer_capacities[i] = network_class.n.links.p_nom_opt['Electrolysis']
-            battery_capacities[i] = network_class.n.stores.e_nom_opt['Battery']
 
             for gen in generators:
                 generators_capacities[gen].append(network_class.n.generators.p_nom_opt[gen.capitalize()])
