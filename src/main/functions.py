@@ -11,6 +11,7 @@ This script contains functions needed by the following files:
 import math
 import numpy as np
 import pandas as pd
+import geopy
 
 def CRF(interest, lifetime):
     '''
@@ -652,3 +653,56 @@ def mineral_conversion_facility(final_state, quantity, interest,
     
     
     return capex_per_unit, opex_per_unit
+
+def calculate_road_construction(hexagon, infrastructure_interest_rate,
+                                infrastructure_lifetime, long_road_capex,
+                                short_road_capex, road_opex):
+    if hexagon['road_dist']==0:
+        road_construction_costs = 0.
+    elif hexagon['road_dist']!=0 and hexagon['road_dist']<10:
+        road_construction_costs = (hexagon['road_dist']
+                                   * short_road_capex
+                                   * CRF(infrastructure_interest_rate,
+                                         infrastructure_lifetime)
+                                   + hexagon['road_dist'] * road_opex)
+    else:
+        road_construction_costs = (hexagon['road_dist'] 
+                                   * long_road_capex 
+                                   * CRF(infrastructure_interest_rate,
+                                         infrastructure_lifetime)
+                                   + hexagon['road_dist'] * road_opex)
+    return road_construction_costs
+
+def geodesic_matrix(gdf1, gdf2):
+    distances = np.empty((gdf1.shape[0], gdf2.shape[0]))
+    # the use of centroid throws a UserWarning when a geographic CRS (e.g. EPSG=4326) is used.
+    # ideally you should convert to a projected crs (ideally with equal area cylindrical?) then back again.
+    for i, p1 in enumerate(gdf1.centroid):
+        for j, p2 in enumerate(gdf2.centroid):
+            distances[i,j] = geopy.distance.geodesic((p1.y, p1.x),
+                                                        (p2.y, p2.x)).km
+  
+    return pd.DataFrame(distances, index=gdf1.index, columns=gdf2.index)
+
+def find_nearest_hex(idx, hex_to_X_distance):
+    hix = hex_to_X_distance.loc[:, idx].sort_values().index[0] # index of the nearest hexagon to the demand centre (contain might not work at low hexagon resolution)
+    return hix
+
+def determine_feedstock_sources(feedstock_points_gdf,
+                                hexagon_to_feedstock_distance_matrix,
+                                hix, feedstock_quantity):
+    feedstock_ranked = feedstock_points_gdf.merge(hexagon_to_feedstock_distance_matrix.loc[hix,:], left_index=True, right_index=True).sort_values(by=hix)[[scenario_code]]
+    feedstock_ranked["Cumulative [kg/year]"] = feedstock_ranked.cumsum()
+    feedstock_ranked["Feedstock used [kg/year]"] = 0.0
+    remaining_quantity = feedstock_quantity
+    for f, feedstock in feedstock_ranked.iterrows():
+        if remaining_quantity <= 0:
+            break
+        feedstock_used = min(feedstock_points_gdf.loc[f], remaining_quantity)
+        feedstock_ranked.loc[f,"Feedstock used [kg/year]"] = feedstock_used
+        remaining_quantity -= feedstock_used
+        
+    
+    feedstock = feedstock_ranked.loc[:feedstock_ranked[feedstock_ranked["Cumulative [kg/year]"] >= feedstock_quantity].index[0], :]
+    feedstock_ranked_idxs = feedstock.index
+    return feedstock, feedstock_ranked_idxs
