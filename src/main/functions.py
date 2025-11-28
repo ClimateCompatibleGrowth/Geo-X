@@ -29,9 +29,6 @@ def CRF(interest, lifetime):
     CRF : float
         present value factor.
     '''
-    interest = float(interest)
-    lifetime = float(lifetime)
-
     CRF = (((1 + interest)**lifetime) * interest)/(((1 + interest)**lifetime) - 1)
     
     return CRF
@@ -623,11 +620,11 @@ def mineral_conversion_facility(final_state, quantity, interest,
     conversion_params = pd.read_excel(conversion_params_filepath,
                                              sheet_name = final_state,
                                              index_col = 'Parameter'
-                                             ).squeeze('columns')
-    plant_lifetime = conversion_params['Plant lifetime (years)']
-    capex_exp_coef_A = conversion_params["CapEx exp coef A (euros/tonne)"]
-    capex_exp_coef_B = conversion_params["CapEx exp coef B (euros/tonne)"]
-    capex_exp_coef_k = conversion_params["CapEx exp coef k (1/tonne)"]
+                                             )
+    plant_lifetime = conversion_params.loc['Plant lifetime (a)']
+    capex_exp_coef_A = conversion_params.loc["CapEx exp coef A (euros/tonne)"]
+    capex_exp_coef_B = conversion_params.loc["CapEx exp coef B (euros/tonne)"]
+    capex_exp_coef_k = conversion_params.loc["CapEx exp coef k (1/tonne)"]
     
     # Proposed exponential function as used by Baptiste in cost curve analysis
     # tot_capex = (capex_exp_coef_A*np.exp(-capex_exp_coef_k*(quantity/1000)) + capex_exp_coef_B) * (quantity/1000) * plant_lifetime
@@ -654,25 +651,27 @@ def mineral_conversion_facility(final_state, quantity, interest,
     
     return capex_per_unit, opex_per_unit
 
-def calculate_road_construction(hexagon, infrastructure_interest_rate,
-                                infrastructure_lifetime, long_road_capex,
-                                short_road_capex, road_opex):
-    if hexagon['road_dist']==0:
-        road_construction_costs = 0.
-    elif hexagon['road_dist']!=0 and hexagon['road_dist']<10:
-        road_construction_costs = (hexagon['road_dist']
-                                   * short_road_capex
-                                   * CRF(infrastructure_interest_rate,
-                                         infrastructure_lifetime)
-                                   + hexagon['road_dist'] * road_opex)
+def calculate_construction_costs(hexagon, infrastructure_interest_rate,
+                                infrastructure_lifetime, long_capex,
+                                short_capex, short_opex, long_opex,
+                                construction_type):
+    dist = hexagon[f'{construction_type}_dist']
+    if dist==0:
+        construction_costs = 0.
+    elif dist<10:
+        construction_costs = (dist
+                                * short_capex
+                                * CRF(infrastructure_interest_rate,
+                                        infrastructure_lifetime)
+                                + dist * short_opex)
     else:
-        road_construction_costs = (hexagon['road_dist'] 
-                                   * long_road_capex 
-                                   * CRF(infrastructure_interest_rate,
-                                         infrastructure_lifetime)
-                                   + hexagon['road_dist'] * road_opex)
-    return road_construction_costs
-
+        construction_costs = (dist
+                                * long_capex 
+                                * CRF(infrastructure_interest_rate,
+                                        infrastructure_lifetime)
+                                + dist * long_opex)
+    return construction_costs
+    
 def geodesic_matrix(gdf1, gdf2):
     distances = np.empty((gdf1.shape[0], gdf2.shape[0]))
     # the use of centroid throws a UserWarning when a geographic CRS (e.g. EPSG=4326) is used.
@@ -690,19 +689,96 @@ def find_nearest_hex(idx, hex_to_X_distance):
 
 def determine_feedstock_sources(feedstock_points_gdf,
                                 hexagon_to_feedstock_distance_matrix,
-                                hix, feedstock_quantity):
-    feedstock_ranked = feedstock_points_gdf.merge(hexagon_to_feedstock_distance_matrix.loc[hix,:], left_index=True, right_index=True).sort_values(by=hix)[[scenario_code]]
+                                hix, feedstock_quantity,file):
+    feedstock_ranked = feedstock_points_gdf.merge(hexagon_to_feedstock_distance_matrix.loc[hix,:], left_index=True, right_index=True).sort_values(by=hix)[['Annual capacity [kg/a]']]
     feedstock_ranked["Cumulative [kg/year]"] = feedstock_ranked.cumsum()
     feedstock_ranked["Feedstock used [kg/year]"] = 0.0
     remaining_quantity = feedstock_quantity
     for f, feedstock in feedstock_ranked.iterrows():
         if remaining_quantity <= 0:
             break
-        feedstock_used = min(feedstock_points_gdf.loc[f], remaining_quantity)
+        feedstock_used = min(feedstock_points_gdf.loc[f, 'Annual capacity [kg/a]'], remaining_quantity)
         feedstock_ranked.loc[f,"Feedstock used [kg/year]"] = feedstock_used
         remaining_quantity -= feedstock_used
         
     
     feedstock = feedstock_ranked.loc[:feedstock_ranked[feedstock_ranked["Cumulative [kg/year]"] >= feedstock_quantity].index[0], :]
+    file.write(f"FEEDSTOCK: {feedstock}\n\n")
     feedstock_ranked_idxs = feedstock.index
     return feedstock, feedstock_ranked_idxs
+
+def calculate_train_costs(transport_state, distance, quantity, interest, 
+                             transport_params_filepath, currency):
+    '''
+    Estimates the annual cost of transporting resource by train.
+    Method:
+        1. 
+        2.
+    Assumptions:
+        1.
+        2.
+
+    Parameters
+    ----------
+    transport_state : string
+        state resource is transported in.
+    distance : float
+        distance between production site and demand site.
+    quantity : float
+        annual amount of resource to transport.
+    interest : float
+        interest rate on capital investments.
+    excel_path : string
+        path to transport_parameters.xlsx file
+        
+    Returns
+    -------
+    annual_costs : float
+        annual cost of hydrogen transport with specified method.
+    '''
+    transport_parameters = pd.read_excel(transport_params_filepath,
+                                         sheet_name = transport_state,
+                                         index_col = 'Parameter'
+                                         ).squeeze('columns')
+
+    average_train_speed = transport_parameters['Average train speed (km/h)']
+    working_hours = transport_parameters['Working hours (h/day)']
+    diesel_price = transport_parameters[f'Diesel price ({currency}/L)']
+    costs_for_driver = transport_parameters[f'Costs for driver ({currency}/h)']
+    working_days = transport_parameters['Working days (per year)']
+
+    spec_capex_loco = transport_parameters[f'Spec capex loco ({currency})']
+    spec_opex_loco = transport_parameters['Spec opex loco (% of capex/a)']
+    diesel_consumption = transport_parameters['Diesel consumption (L/100 km)']
+    loco_lifetime = transport_parameters['Loco lifetime (a)']
+
+    spec_capex_wagon = transport_parameters[f'Spec capex wagon ({currency})']
+    spec_opex_wagon =transport_parameters['Spec opex wagon (% of capex/a)']
+    net_capacity = transport_parameters['Net capacity (kg of commodity)']
+    wagon_lifetime = transport_parameters['Wagon lifetime (a)']
+    loading_unloading_time = transport_parameters['Loading unloading time (h)']
+    max_wagons = transport_parameters['Max wagons per loco']
+
+    # Maximum journeys a single loco can make per year
+    max_journeys_per_loco = (working_hours * working_days) / (loading_unloading_time + (2 * distance / average_train_speed)) 
+    # Maximum quantity a single train (loco + max wagons) can transfer per year
+    max_quantity_per_train = max_journeys_per_loco * net_capacity * max_wagons 
+    # Minimum number of locos required assuming 1 loco per train
+    min_locos = np.ceil(quantity/max_quantity_per_train)
+    min_wagons_per_train = np.ceil((quantity/min_locos)/(net_capacity))  
+    
+    total_train_journeys = quantity / (min_wagons_per_train * net_capacity)
+
+    capex_loco = min_locos * spec_capex_loco
+    capex_wagon = min_wagons_per_train * spec_capex_wagon
+    
+    fuel_costs = ((total_train_journeys * 2 * distance) / 100) * diesel_consumption * diesel_price
+    wages = total_train_journeys * ((distance / average_train_speed) * 2 + loading_unloading_time) * costs_for_driver
+
+    annual_costs = ((capex_loco * CRF(interest, loco_lifetime) + capex_wagon * CRF(interest, wagon_lifetime))
+                    + capex_loco * spec_opex_loco 
+                    + capex_wagon * spec_opex_wagon 
+                    + fuel_costs 
+                    + wages)
+    
+    return annual_costs

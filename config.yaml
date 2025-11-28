@@ -16,7 +16,7 @@ freq: '1H'
 # Generators:
 # Modify 'generators_dict' to hold the generators you would like to use
 # Make sure it is in the same style as below
-generators_dict: {'solar' : [], 'wind' : [], 'hydro' : [], 'geothermal' : [],}
+generators_dict: {'solar' : [], 'wind' : [],}
 panel: 'CSi'
 turbine: 'NREL_ReferenceTurbine_2020ATB_4MW'
 gen_capacity:
@@ -42,6 +42,10 @@ water:
 transport:
     pipeline_construction: True
     road_construction: True
+    rail_construction: True
 
+grid_construction: True
 # Make sure this matches the currency used in your parameter files
 currency: 'euros'
+
+restrict_hexagons: False

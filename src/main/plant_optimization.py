@@ -21,6 +21,7 @@ from scipy.constants import physical_constants
 import xarray as xr
 import glob
 
+from functions import CRF
 from network import Network
 
 def hydropower_potential_with_capacity(flowrate, head, capacity, eta):
@@ -60,6 +61,35 @@ def hydropower_potential_with_capacity(flowrate, head, capacity, eta):
     capacity_factor = limited_potential / capacity
 
     return capacity_factor
+
+def calculate_grid_construction(hexagon, infra_data, country_params):
+    grid_capex = infra_data.at['Grid','CAPEX']
+    grid_opex = infra_data.at['Grid','OPEX']
+    infrastructure_interest_rate = float(country_params['Infrastructure interest rate'].iloc[0])
+    infrastructure_lifetime = float(country_params['Infrastructure lifetime (years)'].iloc[0]) 
+
+    if hexagon['grid_dist']==0:
+        grid_construction_costs = 0.
+    else:
+        grid_construction_costs = (hexagon['grid_dist'] 
+                                   * grid_capex 
+                                   * CRF(infrastructure_interest_rate,
+                                         infrastructure_lifetime)
+                                   + hexagon['grid_dist'] * grid_opex)
+    return grid_construction_costs
+
+def grid_connection(demand, elec_kWh_per_kg, product_quantity, country_series):
+    
+    grid_capacity = (elec_kWh_per_kg
+                        * demand).max().iloc[0]/1000 # in MW if hourly data
+    
+    grid_energy_cost = ((elec_kWh_per_kg * demand * country_series["Electricity price (euros/kWh)"]).sum().iloc[0]
+                        + (grid_capacity * country_series["Grid connection cost (euros/kW)"] * 1000)
+                        + country_series["Electricity fixed charge (euros/year)"])
+    
+    grid_energy_cost_per_kg = grid_energy_cost / product_quantity
+    lcoe = grid_energy_cost / (elec_kWh_per_kg * demand).sum().iloc[0]  # euros/kWh
+    return grid_energy_cost, lcoe, grid_energy_cost_per_kg, grid_capacity
 
 def _nh3_pyomo_constraints(n, snapshots):
     """Includes a series of additional constraints which make the ammonia plant work as needed:
@@ -128,7 +158,7 @@ if __name__ == "__main__":
     demand_params_filepath = snakemake.input.demand_parameters
     country_params = pd.read_excel(country_params_filepath, index_col='Country')
     country_series = country_params.iloc[0]
-    demand_params = pd.read_excel(demand_params_filepath, index_col='Demand center')
+    demand_params = pd.read_excel(demand_params_filepath, sheet_name='Demand centers', index_col='Demand center')
     demand_centers = demand_params.index
 
     years = snakemake.config["years_to_check"]
@@ -139,8 +169,6 @@ if __name__ == "__main__":
     solver = snakemake.config['solver']
     generators = snakemake.config['generators_dict']
     hexagons = gpd.read_file(snakemake.input.hexagons)
-    needs_pipeline_construction = snakemake.config['transport']['pipeline_construction']
-
     # Get a uniform capacity layout for all grid cells. https://atlite.readthedocs.io/en/master/ref_api.html
     cutout_filepath = f'cutouts/{snakemake.wildcards.country}_{snakemake.wildcards.weather_year}.nc'
 
@@ -160,6 +188,22 @@ if __name__ == "__main__":
     water_limit_amount = snakemake.config['water']['annual_limit']
     freq = snakemake.config['freq']
     plant_type = snakemake.wildcards.plant_type
+    
+    if plant_type == 'minx':
+        needs_grid_construction = snakemake.config["transport"]["grid_construction"]
+        tech_params_filepath = snakemake.input.technology_parameters
+        infra_data = pd.read_excel(tech_params_filepath,
+                                    sheet_name='Infra',
+                                    index_col='Infrastructure')
+        conversion_params_filepath = f'parameters/{snakemake.wildcards.country}/{snakemake.wildcards.plant_type}/conversion_parameters.xlsx'
+        
+        # Calculate grid contruction costs
+        if needs_grid_construction:
+            hexagons_grid_construction = hexagons.apply(calculate_grid_construction,
+                                                                    args=[infra_data, country_params],
+                                                                    axis=1)
+            
+
     
     # Creating hydropower generator profile
     if "hydro" in generators:
@@ -278,6 +322,12 @@ if __name__ == "__main__":
         if plant_type == "ammonia":
             nh3_storages = np.zeros(len_hexagons)
             hb_capacities = np.zeros(len_hexagons)
+        
+        if plant_type =="minx":
+            demand_state = demand_center_list.loc[demand_center,'Demand state']
+            conversion_params = pd.read_excel(conversion_params_filepath,
+                                    sheet_name=demand_state,
+                                    index_col='Parameter',)
 
         annual_demand_quantity = float(demand_params.loc[demand_center,'Annual demand [kg/a]'])
         total_demand = annual_demand_quantity*years
@@ -313,66 +363,85 @@ if __name__ == "__main__":
                 generators[gen].append(max_capacity)
                 gen_index += 1
 
-            # Check for water constraint before any solving occurs
-            if has_water_limit == True:
+            if plant_type == 'minx':
+                # =============================================================================
+                # grid only energy optimisation
+                # =============================================================================
+
+                hex_grid_construction = 0
+                if needs_grid_construction:
+                    hex_grid_construction = hexagons_grid_construction[i]
+
+                # grid-only power
+                (ongrid_E_cost,
+                ongrid_lcoe,
+                grid_energy_cost_per_kg,
+                grid_capacity) = grid_connection(demand_resampled_schedule,
+                                                params.loc[((params["Mineral State"]==demand_state) & (params["Type"]=="Conversion")), scenario_code].at["Electricity demand (kWh per kg product)"],
+                                                product_quantity,
+                                                params.loc[params["Type"]=="Country", scenario_code]
+                                                )
+            else:
+                # Check for water constraint before any solving occurs
+                if has_water_limit == True:
+                    if plant_type == "hydrogen":
+                        # Check if hydrogen demand can be met based on water 
+                        # availability kg H2 per cubic meter of water
+                        water_constraint =  annual_demand_quantity > water_limit_amount * 111.57
+                    elif plant_type == "ammonia":
+                        # Total hydrogen demand in kg
+                        # Converts kg ammonia to kg H2
+                        total_hydrogen_demand = annual_demand_quantity * 17 / 3  
+                        # Check if hydrogen demand can be met based on water 
+                        # availability kg H2 per cubic meter of water
+                        water_constraint = total_hydrogen_demand > water_limit_amount * 111.57
+                        
+                    # Note: this constraint is purely stoichiometric
+                    # - more water may be needed for cooling or other processes
+                    if water_constraint == True:
+                        print('Not enough water to meet demand!')
+                        lcs[i] = np.nan
+                        electrolyzer_capacities[i] = np.nan
+                        battery_capacities[i] = np.nan
+                        h2_storages[i] = np.nan
+                        for gen in generators:
+                            generators_capacities[gen].append(np.nan)
+                        if plant_type == "ammonia": 
+                            nh3_storages[i] = np.nan
+                            hb_capacities[i] = np.nan
+                        continue
+                
+                # Set up the network
+                network_class = Network(plant_type, generators)
+                network_class.set_network(demand_resampled_schedule, country_series)
+                network_class.set_generators_in_network(country_series)
+
                 if plant_type == "hydrogen":
-                    # Check if hydrogen demand can be met based on water 
-                    # availability kg H2 per cubic meter of water
-                    water_constraint =  annual_demand_quantity > water_limit_amount * 111.57
-                elif plant_type == "ammonia":
-                    # Total hydrogen demand in kg
-                    # Converts kg ammonia to kg H2
-                    total_hydrogen_demand = annual_demand_quantity * 17 / 3  
-                    # Check if hydrogen demand can be met based on water 
-                    # availability kg H2 per cubic meter of water
-                    water_constraint = total_hydrogen_demand > water_limit_amount * 111.57
+                    # Solve
+                    network_class.n.lopf(solver_name=solver,
+                        solver_options = {'LogToConsole':0, 'OutputFlag':0},
+                        pyomo=False,
+                        )
                     
-                # Note: this constraint is purely stoichiometric
-                # - more water may be needed for cooling or other processes
-                if water_constraint == True:
-                    print('Not enough water to meet demand!')
-                    lcs[i] = np.nan
-                    electrolyzer_capacities[i] = np.nan
-                    battery_capacities[i] = np.nan
-                    h2_storages[i] = np.nan
-                    for gen in generators:
-                        generators_capacities[gen].append(np.nan)
-                    if plant_type == "ammonia": 
-                        nh3_storages[i] = np.nan
-                        hb_capacities[i] = np.nan
-                    continue
-            
-            # Set up the network
-            network_class = Network(plant_type, generators)
-            network_class.set_network(demand_resampled_schedule, country_series)
-            network_class.set_generators_in_network(country_series)
+                    h2_storages[i] = network_class.n.stores.e_nom_opt['CompressedH2Store']
+                elif plant_type == "ammonia":
+                    # Solve 
+                    network_class.n.lopf(solver_name=solver,
+                        solver_options={'LogToConsole': 0, 'OutputFlag': 0},
+                        pyomo=True,
+                        extra_functionality=_nh3_pyomo_constraints)
+                    
+                    h2_storages[i] = network_class.n.stores.e_nom_opt['CompressedH2Store']
+                    # !!! need to save ammonia storage capacity as well
+                    nh3_storages[i] = network_class.n.stores.e_nom_opt['Ammonia']
+                    hb_capacities[i] = network_class.n.links.p_nom_opt['HB']
 
-            if plant_type == "hydrogen":
-                # Solve
-                network_class.n.lopf(solver_name=solver,
-                    solver_options = {'LogToConsole':0, 'OutputFlag':0},
-                    pyomo=False,
-                    )
-                
-                h2_storages[i] = network_class.n.stores.e_nom_opt['CompressedH2Store']
-            elif plant_type == "ammonia":
-                # Solve 
-                network_class.n.lopf(solver_name=solver,
-                    solver_options={'LogToConsole': 0, 'OutputFlag': 0},
-                    pyomo=True,
-                    extra_functionality=_nh3_pyomo_constraints)
-                
-                h2_storages[i] = network_class.n.stores.e_nom_opt['CompressedH2Store']
-                # !!! need to save ammonia storage capacity as well
-                nh3_storages[i] = network_class.n.stores.e_nom_opt['Ammonia']
-                hb_capacities[i] = network_class.n.links.p_nom_opt['HB']
+                lcs[i] = network_class.n.objective/total_demand
+                electrolyzer_capacities[i] = network_class.n.links.p_nom_opt['Electrolysis']
+                battery_capacities[i] = network_class.n.stores.e_nom_opt['Battery']
 
-            lcs[i] = network_class.n.objective/total_demand
-            electrolyzer_capacities[i] = network_class.n.links.p_nom_opt['Electrolysis']
-            battery_capacities[i] = network_class.n.stores.e_nom_opt['Battery']
-
-            for gen in generators:
-                generators_capacities[gen].append(network_class.n.generators.p_nom_opt[gen.capitalize()])
+                for gen in generators:
+                    generators_capacities[gen].append(network_class.n.generators.p_nom_opt[gen.capitalize()])
         
         print("\nOptimisation complete.\n")        
         # Updating results in hexagon file
@@ -385,5 +454,28 @@ if __name__ == "__main__":
         if plant_type == "ammonia":        
             hexagons[f'{demand_center} NH3 storage capacity'] = nh3_storages
             hexagons[f'{demand_center} HB capacity'] = hb_capacities
+
+    
+        # # off-grid costs
+        # hexagons[f'{dix} offgrid PV capacity (MW)'] = pv_capacities,
+        # hexagons[f'{dix} offgrid Wind capacity (MW)'] = wind_capacities,
+        # hexagons[f'{dix} offgrid Battery capacity (MW)'] = battery_capacities,
+        # hexagons[f'{dix} offgrid total energy cost (euros/kg/year)'] = offgrid_E_costs / product_quantity,
+        # hexagons[f'{dix} offgrid lcoe (euros/kWh)'] = offgrid_lcoes,
+        
+        
+        # # hybrid-grid costs
+        # hexagons[f'{dix} hybrid PV capacity (MW)'] = hybrid_pv_capacities,
+        # hexagons[f'{dix} hybrid Wind capacity (MW)'] = hybrid_wind_capacities,
+        # hexagons[f'{dix} hybrid Battery capacity (MW)'] = hybrid_battery_capacities,
+        # hexagons[f'{dix} hybrid grid capacity (MW)'] = hybrid_grid_capacities,
+        # hexagons[f'{dix} hybrid total energy cost (euros/kg/year)'] = hybrid_totE_costs / product_quantity,
+        # hexagons[f'{dix} hybrid lcoe (euros/kWh)'] = hybrid_lcoes,
+        
+        # grid costs
+        hexagons[f'{dix} grid construction (euros/kg/year)'] = grid_construction_costs / product_quantity,
+        hexagons[f'{dix} grid total energy cost (euros/kg/year)'] = ongrid_totE_costs / product_quantity ,
+        hexagons[f'{dix} grid capacity (MW)'] = grid_capacities,
+        hexagons[f'{dix} grid lcoe (euros/kWh)'] = grid_lcoes,
 
     hexagons.to_file(str(snakemake.output), driver='GeoJSON', encoding='utf-8')

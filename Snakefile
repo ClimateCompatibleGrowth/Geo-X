@@ -43,7 +43,6 @@ rule optimize_transport:
         demand_parameters = 'parameters/{country}/{plant_type}/demand_parameters.xlsx',
         country_parameters = 'parameters/{country}/{plant_type}/country_parameters.xlsx',
         transport_parameters = 'parameters/{country}/{plant_type}/transport_parameters.xlsx',
-        pipeline_parameters = 'parameters/{country}/{plant_type}/pipeline_parameters.xlsx'
     output:
         'resources/hex_transport_{country}_{plant_type}.geojson'
     script:
