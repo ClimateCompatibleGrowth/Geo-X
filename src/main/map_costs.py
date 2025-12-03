@@ -164,13 +164,13 @@ if __name__ == "__main__":
                                 {'label': f'{transport_method} cost [{currency}/kg]'}, output_folder)
 
     # Ocean water costs
-    plot_and_save(crs, hexagons, 'Ocean water costs',
+    plot_and_save(crs, hexagons, 'Ocean water cost',
                 {'label': f'Water cost [{currency}/kg H2]'}, output_folder)
 
     plt.ticklabel_format(style='plain')
 
     # Freshwater costs
-    plot_and_save(crs, hexagons, 'Freshwater costs',
+    plot_and_save(crs, hexagons, 'Freshwater cost',
                 {'label': f'Water cost [{currency}/kg H2]'}, output_folder)
 
     plt.ticklabel_format(style='plain')

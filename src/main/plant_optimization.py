@@ -190,13 +190,17 @@ if __name__ == "__main__":
     plant_type = snakemake.wildcards.plant_type
     
     if plant_type == 'minx':
-        needs_grid_construction = snakemake.config["transport"]["grid_construction"]
-        tech_params_filepath = snakemake.input.technology_parameters
+        needs_grid_construction = snakemake.config["grid_construction"]
+        tech_params_filepath = f'parameters/{snakemake.wildcards.country}/{snakemake.wildcards.plant_type}/technology_parameters.xlsx'
         infra_data = pd.read_excel(tech_params_filepath,
                                     sheet_name='Infra',
                                     index_col='Infrastructure')
         conversion_params_filepath = f'parameters/{snakemake.wildcards.country}/{snakemake.wildcards.plant_type}/conversion_parameters.xlsx'
-        
+        grid_construction_costs = np.zeros(len_hexagons)
+        ongrid_totE_costs = np.zeros(len_hexagons)
+        grid_lcoes = np.zeros(len_hexagons)
+        grid_capacities = np.zeros(len_hexagons)
+
         # Calculate grid contruction costs
         if needs_grid_construction:
             hexagons_grid_construction = hexagons.apply(calculate_grid_construction,
@@ -324,10 +328,12 @@ if __name__ == "__main__":
             hb_capacities = np.zeros(len_hexagons)
         
         if plant_type =="minx":
-            demand_state = demand_center_list.loc[demand_center,'Demand state']
+            demand_state = demand_params.loc[demand_center,'Demand state']
             conversion_params = pd.read_excel(conversion_params_filepath,
                                     sheet_name=demand_state,
-                                    index_col='Parameter',)
+                                    index_col='Parameter').squeeze('columns')
+            
+            electricity_demand = conversion_params['Electricity demand (kWh per kg product)']
 
         annual_demand_quantity = float(demand_params.loc[demand_center,'Annual demand [kg/a]'])
         total_demand = annual_demand_quantity*years
@@ -335,8 +341,6 @@ if __name__ == "__main__":
         # Loop through all hexagons
         for i in range(len_hexagons):
             print(f"\nCurrently optimising {i+1} of {len_hexagons} hexagons...")
-            trucking_state = hexagons.loc[i, f'{demand_center} trucking state']
-            pipeline_transport_costs = hexagons.loc[i, f'{demand_center} pipeline transport costs']
             gen_index = 0
             generators = deepcopy(snakemake.config['generators_dict'])
             
@@ -368,19 +372,19 @@ if __name__ == "__main__":
                 # grid only energy optimisation
                 # =============================================================================
 
-                hex_grid_construction = 0
                 if needs_grid_construction:
-                    hex_grid_construction = hexagons_grid_construction[i]
+                    grid_construction_costs[i] = hexagons_grid_construction[i]/total_demand
 
                 # grid-only power
                 (ongrid_E_cost,
-                ongrid_lcoe,
+                grid_lcoes[i],
                 grid_energy_cost_per_kg,
-                grid_capacity) = grid_connection(demand_resampled_schedule,
-                                                params.loc[((params["Mineral State"]==demand_state) & (params["Type"]=="Conversion")), scenario_code].at["Electricity demand (kWh per kg product)"],
-                                                product_quantity,
-                                                params.loc[params["Type"]=="Country", scenario_code]
-                                                )
+                grid_capacities[i]) = grid_connection(demand_resampled_schedule,
+                                                electricity_demand,
+                                                total_demand,
+                                                country_series)
+                
+                ongrid_totE_costs[i] = (ongrid_E_cost + hexagons_grid_construction[i])/total_demand
             else:
                 # Check for water constraint before any solving occurs
                 if has_water_limit == True:
@@ -423,7 +427,8 @@ if __name__ == "__main__":
                         pyomo=False,
                         )
                     
-                    h2_storages[i] = network_class.n.stores.e_nom_opt['CompressedH2Store']
+                    h2_storages[i] = network_class.n.stores.e_nom_opt['Compressed H2 Store']
+                    battery_capacities[i] = network_class.n.storage_units.p_nom_opt['Battery']
                 elif plant_type == "ammonia":
                     # Solve 
                     network_class.n.lopf(solver_name=solver,
@@ -435,47 +440,49 @@ if __name__ == "__main__":
                     # !!! need to save ammonia storage capacity as well
                     nh3_storages[i] = network_class.n.stores.e_nom_opt['Ammonia']
                     hb_capacities[i] = network_class.n.links.p_nom_opt['HB']
+                    battery_capacities[i] = network_class.n.stores.e_nom_opt['Battery']
 
                 lcs[i] = network_class.n.objective/total_demand
                 electrolyzer_capacities[i] = network_class.n.links.p_nom_opt['Electrolysis']
-                battery_capacities[i] = network_class.n.stores.e_nom_opt['Battery']
-
+                
                 for gen in generators:
                     generators_capacities[gen].append(network_class.n.generators.p_nom_opt[gen.capitalize()])
         
         print("\nOptimisation complete.\n")        
         # Updating results in hexagon file
-        for gen, capacities in generators_capacities.items():
-            hexagons[f'{demand_center} {gen} capacity'] = capacities
-        hexagons[f'{demand_center} electrolyzer capacity'] = electrolyzer_capacities
-        hexagons[f'{demand_center} battery capacity'] = battery_capacities
-        hexagons[f'{demand_center} H2 storage capacity'] = h2_storages
-        hexagons[f'{demand_center} production cost'] = lcs
-        if plant_type == "ammonia":        
-            hexagons[f'{demand_center} NH3 storage capacity'] = nh3_storages
-            hexagons[f'{demand_center} HB capacity'] = hb_capacities
+        if plant_type == 'minx':
+            # # off-grid costs
+            # hexagons[f'{demand_center} offgrid PV capacity (MW)'] = pv_capacities,
+            # hexagons[f'{demand_center} offgrid Wind capacity (MW)'] = wind_capacities,
+            # hexagons[f'{demand_center} offgrid Battery capacity (MW)'] = battery_capacities,
+            # hexagons[f'{demand_center} offgrid total energy cost (euros/kg/year)'] = offgrid_E_costs / product_quantity,
+            # hexagons[f'{demand_center} offgrid lcoe (euros/kWh)'] = offgrid_lcoes,
+            
+            
+            # # hybrid-grid costs
+            # hexagons[f'{demand_center} hybrid PV capacity (MW)'] = hybrid_pv_capacities,
+            # hexagons[f'{demand_center} hybrid Wind capacity (MW)'] = hybrid_wind_capacities,
+            # hexagons[f'{demand_center} hybrid Battery capacity (MW)'] = hybrid_battery_capacities,
+            # hexagons[f'{demand_center} hybrid grid capacity (MW)'] = hybrid_grid_capacities,
+            # hexagons[f'{demand_center} hybrid total energy cost (euros/kg/year)'] = hybrid_totE_costs / product_quantity,
+            # hexagons[f'{demand_center} hybrid lcoe (euros/kWh)'] = hybrid_lcoes,
+            
+            # -- Done the below
+            # grid costs
+            hexagons[f'{demand_center} grid construction (euros/kg/year)'] = grid_construction_costs
+            hexagons[f'{demand_center} grid total energy cost (euros/kg/year)'] = ongrid_totE_costs 
+            hexagons[f'{demand_center} grid capacity (MW)'] = grid_capacities
+            hexagons[f'{demand_center} grid lcoe (euros/kWh)'] = grid_lcoes
 
-    
-        # # off-grid costs
-        # hexagons[f'{dix} offgrid PV capacity (MW)'] = pv_capacities,
-        # hexagons[f'{dix} offgrid Wind capacity (MW)'] = wind_capacities,
-        # hexagons[f'{dix} offgrid Battery capacity (MW)'] = battery_capacities,
-        # hexagons[f'{dix} offgrid total energy cost (euros/kg/year)'] = offgrid_E_costs / product_quantity,
-        # hexagons[f'{dix} offgrid lcoe (euros/kWh)'] = offgrid_lcoes,
-        
-        
-        # # hybrid-grid costs
-        # hexagons[f'{dix} hybrid PV capacity (MW)'] = hybrid_pv_capacities,
-        # hexagons[f'{dix} hybrid Wind capacity (MW)'] = hybrid_wind_capacities,
-        # hexagons[f'{dix} hybrid Battery capacity (MW)'] = hybrid_battery_capacities,
-        # hexagons[f'{dix} hybrid grid capacity (MW)'] = hybrid_grid_capacities,
-        # hexagons[f'{dix} hybrid total energy cost (euros/kg/year)'] = hybrid_totE_costs / product_quantity,
-        # hexagons[f'{dix} hybrid lcoe (euros/kWh)'] = hybrid_lcoes,
-        
-        # grid costs
-        hexagons[f'{dix} grid construction (euros/kg/year)'] = grid_construction_costs / product_quantity,
-        hexagons[f'{dix} grid total energy cost (euros/kg/year)'] = ongrid_totE_costs / product_quantity ,
-        hexagons[f'{dix} grid capacity (MW)'] = grid_capacities,
-        hexagons[f'{dix} grid lcoe (euros/kWh)'] = grid_lcoes,
+        else:
+            for gen, capacities in generators_capacities.items():
+                hexagons[f'{demand_center} {gen} capacity'] = capacities
+            hexagons[f'{demand_center} electrolyzer capacity'] = electrolyzer_capacities
+            hexagons[f'{demand_center} battery capacity'] = battery_capacities
+            hexagons[f'{demand_center} H2 storage capacity'] = h2_storages
+            hexagons[f'{demand_center} production cost'] = lcs
+            if plant_type == "ammonia":        
+                hexagons[f'{demand_center} NH3 storage capacity'] = nh3_storages
+                hexagons[f'{demand_center} HB capacity'] = hb_capacities
 
     hexagons.to_file(str(snakemake.output), driver='GeoJSON', encoding='utf-8')

@@ -65,20 +65,19 @@ def main():
             if plant_type == 'minx':
                 # Calculating total offgrid LCOP
                 if hexagons[f'{demand_center} offgrid total energy cost ({currency}/kg/year)'][i] == np.nan:
-                    hexagons[f'{demand_center} total offgrid LCOP'][i] = np.nan
+                    hexagons.loc[i, f'{demand_center} total offgrid LCOP'] = np.nan
                 else:
-                    hexagons[f'{demand_center} total offgrid LCOP'][i] = (hexagons[f'{demand_center} offgrid total energy cost ({currency}/kg/year)'][i]
-                                            + hexagons[f'{demand_center} annual facility costs ({currency}/kg/year)'][i]
-                                            + hexagons[f'{demand_center} total road transport costs ({currency}/kg/year)'][i]
-                                            + hexagons[f'{demand_center} feedstock cost ({currency}/kg/year)'][i]
-                                            + hexagons[f'{demand_center} lowest water cost ({currency}/kg/year)'][i])
+                    hexagons.loc[i, f'{demand_center} total offgrid LCOP'] = (hexagons.loc[i, f'{demand_center} offgrid total energy cost ({currency}/kg/year)']
+                                            + hexagons.loc[i, f'{demand_center} annual facility costs ({currency}/kg/year)']
+                                            + hexagons.loc[i, f'{demand_center} total road transport costs ({currency}/kg/year)']
+                                            + hexagons.loc[i, f'{demand_center} feedstock cost ({currency}/kg/year)']
+                                            + hexagons.loc[i, f'{demand_center} lowest water cost ({currency}/kg/year)'])
             else:
                 # Get the lowest between the trucking and the pipeline options
                 print(f"Determining lowest cost for {i+1} of {len_hexagons}...")
-                hexagons[f'{demand_center} lowest cost'][i] = np.nanmin(
-                                        [hexagons[f'{demand_center} trucking total cost'][i],
-                                        hexagons[f'{demand_center} pipeline total cost'][i]
-                                        ])
+                hexagons.loc[i, f'{demand_center} lowest cost'] = np.nanmin(
+                                        [hexagons.loc[i, f'{demand_center} trucking total cost'],
+                                        hexagons.loc[i, f'{demand_center} pipeline total cost']])
             
     print("\nCalculations complete.\n")
     hexagons.to_file(str(snakemake.output), driver='GeoJSON', encoding='utf-8')
