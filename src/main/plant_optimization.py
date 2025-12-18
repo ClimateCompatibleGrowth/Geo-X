@@ -17,6 +17,7 @@ import logging
 import numpy as np
 import pandas as pd
 import pyomo.environ as pm
+import pypsa
 from scipy.constants import physical_constants
 import xarray as xr
 import glob
@@ -83,12 +84,12 @@ def grid_connection(demand, elec_kWh_per_kg, product_quantity, country_series):
     grid_capacity = (elec_kWh_per_kg
                         * demand).max().iloc[0]/1000 # in MW if hourly data
     
-    grid_energy_cost = ((elec_kWh_per_kg * demand * country_series["Electricity price (euros/kWh)"]).sum().iloc[0]
-                        + (grid_capacity * country_series["Grid connection cost (euros/kW)"] * 1000)
-                        + country_series["Electricity fixed charge (euros/year)"])
+    grid_energy_cost = ((elec_kWh_per_kg * demand * country_series[f"Electricity price ({currency}/kWh)"]).sum().iloc[0]
+                        + (grid_capacity * country_series[f"Grid connection cost ({currency}/kW)"] * 1000)
+                        + country_series[f"Electricity fixed charge ({currency}/year)"])
     
     grid_energy_cost_per_kg = grid_energy_cost / product_quantity
-    lcoe = grid_energy_cost / (elec_kWh_per_kg * demand).sum().iloc[0]  # euros/kWh
+    lcoe = grid_energy_cost / (elec_kWh_per_kg * demand).sum().iloc[0]  # currency/kWh
     return grid_energy_cost, lcoe, grid_energy_cost_per_kg, grid_capacity
 
 def _nh3_pyomo_constraints(n, snapshots):
@@ -189,17 +190,14 @@ if __name__ == "__main__":
     freq = snakemake.config['freq']
     plant_type = snakemake.wildcards.plant_type
     
-    if plant_type == 'minx':
+    if plant_type == 'copper':
         needs_grid_construction = snakemake.config["grid_construction"]
         tech_params_filepath = f'parameters/{snakemake.wildcards.country}/{snakemake.wildcards.plant_type}/technology_parameters.xlsx'
         infra_data = pd.read_excel(tech_params_filepath,
                                     sheet_name='Infra',
                                     index_col='Infrastructure')
         conversion_params_filepath = f'parameters/{snakemake.wildcards.country}/{snakemake.wildcards.plant_type}/conversion_parameters.xlsx'
-        grid_construction_costs = np.zeros(len_hexagons)
-        ongrid_totE_costs = np.zeros(len_hexagons)
-        grid_lcoes = np.zeros(len_hexagons)
-        grid_capacities = np.zeros(len_hexagons)
+        currency = snakemake.config["currency"]
 
         # Calculate grid contruction costs
         if needs_grid_construction:
@@ -316,18 +314,39 @@ if __name__ == "__main__":
     for demand_center in demand_centers:
         print(f"\nOptimisation for {demand_center} begins...")
         # Store results
-        lcs = np.zeros(len_hexagons)
-        generators_capacities = deepcopy(snakemake.config['generators_dict'])
-        electrolyzer_capacities= np.zeros(len_hexagons)
-        battery_capacities = np.zeros(len_hexagons)
-        h2_storages= np.zeros(len_hexagons)
+        if plant_type == "copper":
+            # Offgrid storage variables
+            offgrid_E_costs = np.zeros(len_hexagons)
+            offgrid_lcoes = np.zeros(len_hexagons)
+            offgrid_battery_capacities= np.zeros(len_hexagons)
+            offgrid_generators_capacities = deepcopy(snakemake.config['generators_dict'])
+
+            # Hybrid storage variables
+            hybrid_E_costs = np.zeros(len_hexagons)
+            hybrid_lcoes = np.zeros(len_hexagons)
+            hybrid_battery_capacities= np.zeros(len_hexagons)
+            hybrid_grid_capacities= np.zeros(len_hexagons)
+            hybrid_generators_capacities = deepcopy(snakemake.config['generators_dict'])
+
+
+            # Grid storage variables
+            grid_construction_costs = np.zeros(len_hexagons)
+            ongrid_totE_costs = np.zeros(len_hexagons)
+            grid_lcoes = np.zeros(len_hexagons)
+            grid_capacities = np.zeros(len_hexagons)
+        else:
+            lcs = np.zeros(len_hexagons)
+            generators_capacities = deepcopy(snakemake.config['generators_dict'])
+            electrolyzer_capacities= np.zeros(len_hexagons)
+            battery_capacities = np.zeros(len_hexagons)
+            h2_storages= np.zeros(len_hexagons)
 
         # Ammonia extra storage variables
         if plant_type == "ammonia":
             nh3_storages = np.zeros(len_hexagons)
             hb_capacities = np.zeros(len_hexagons)
         
-        if plant_type =="minx":
+        if plant_type =="copper":
             demand_state = demand_params.loc[demand_center,'Demand state']
             conversion_params = pd.read_excel(conversion_params_filepath,
                                     sheet_name=demand_state,
@@ -367,15 +386,12 @@ if __name__ == "__main__":
                 generators[gen].append(max_capacity)
                 gen_index += 1
 
-            if plant_type == 'minx':
-                # =============================================================================
-                # grid only energy optimisation
-                # =============================================================================
-
+            if plant_type == 'copper':
+                # Grid only energy optimisation
                 if needs_grid_construction:
                     grid_construction_costs[i] = hexagons_grid_construction[i]/total_demand
 
-                # grid-only power
+                # Grid-only power
                 (ongrid_E_cost,
                 grid_lcoes[i],
                 grid_energy_cost_per_kg,
@@ -385,6 +401,54 @@ if __name__ == "__main__":
                                                 country_series)
                 
                 ongrid_totE_costs[i] = (ongrid_E_cost + hexagons_grid_construction[i])/total_demand
+                
+
+                # Set up the network
+                network_class = Network(plant_type, generators, pypsa.Network())
+                network_class.set_network(demand_resampled_schedule, country_series,
+                                          demand_state,electricity_demand)
+                network_class.update_generators(country_series)
+
+                # Offgrid only optimisation of facility
+                # Facility energy optimisation
+                if demand_state == 'CuConcentrate':
+                    offgrid_E_costs[i] = 0
+                    offgrid_lcoes[i] = 0
+                    offgrid_battery_capacities[i]= 0
+                    for gen in generators:
+                        offgrid_generators_capacities[gen].append(0)
+                else:
+                    energy_access_connections = False
+                    if energy_access_connections != False:
+                        network_class.add_community_energy_demand(energy_access_connections)
+
+                    network_class.n.lopf(solver_name=solver,
+                            solver_options = {'OutputFlag': 0},
+                            pyomo=False,
+                            )
+                    
+                    offgrid_E_costs[i] = network_class.n.objective
+                    offgrid_lcoes[i] = offgrid_E_costs[i] / (network_class.n.generators_t.p.sum().sum()*1000)  # total system cost / energy produced (currency/kWh)
+                    for gen in generators:
+                        offgrid_generators_capacities[gen].append(network_class.n.generators.p_nom_opt[gen.capitalize()])
+                    offgrid_battery_capacities[i] = network_class.n.storage_units.p_nom_opt['Battery']
+
+                # Hybrid energy optimisation of facility
+                network_class.add_grid(country_series, currency)
+
+                network_class.n.lopf(solver_name=solver,
+                            solver_options = {'OutputFlag': 0},
+                            pyomo=False,
+                            )
+                
+                hybrid_E_costs[i] = network_class.n.objective + country_series[f"Electricity fixed charge ({currency}/year)"]
+                # Hybrid LCOE = total system cost / energy produced (currency/kWh)
+                hybrid_lcoes[i] = hybrid_E_costs[i] / (network_class.n.generators_t.p.sum().sum()*1000)
+                for gen in generators:
+                        hybrid_generators_capacities[gen].append(network_class.n.generators.p_nom_opt[gen.capitalize()])
+                hybrid_battery_capacities[i] = network_class.n.storage_units.p_nom_opt['Battery']
+                hybrid_grid_capacities[i] = network_class.n.generators.p_nom_opt['Grid']
+                
             else:
                 # Check for water constraint before any solving occurs
                 if has_water_limit == True:
@@ -418,7 +482,7 @@ if __name__ == "__main__":
                 # Set up the network
                 network_class = Network(plant_type, generators)
                 network_class.set_network(demand_resampled_schedule, country_series)
-                network_class.set_generators_in_network(country_series)
+                network_class.update_generators(country_series)
 
                 if plant_type == "hydrogen":
                     # Solve
@@ -447,32 +511,30 @@ if __name__ == "__main__":
                 
                 for gen in generators:
                     generators_capacities[gen].append(network_class.n.generators.p_nom_opt[gen.capitalize()])
-        
+    
         print("\nOptimisation complete.\n")        
         # Updating results in hexagon file
-        if plant_type == 'minx':
+        if plant_type == 'copper':
             # # off-grid costs
-            # hexagons[f'{demand_center} offgrid PV capacity (MW)'] = pv_capacities,
-            # hexagons[f'{demand_center} offgrid Wind capacity (MW)'] = wind_capacities,
-            # hexagons[f'{demand_center} offgrid Battery capacity (MW)'] = battery_capacities,
-            # hexagons[f'{demand_center} offgrid total energy cost (euros/kg/year)'] = offgrid_E_costs / product_quantity,
-            # hexagons[f'{demand_center} offgrid lcoe (euros/kWh)'] = offgrid_lcoes,
-            
+            for gen, capacities in offgrid_generators_capacities.items():
+                hexagons[f'{demand_center} offgrid {gen} capacity (MW)'] = capacities
+            hexagons[f'{demand_center} offgrid battery capacity (MW)'] = offgrid_battery_capacities
+            hexagons[f'{demand_center} offgrid total energy cost ({currency}/kg/year)'] = offgrid_E_costs / annual_demand_quantity
+            hexagons[f'{demand_center} offgrid lcoe ({currency}/kWh)'] = offgrid_lcoes
             
             # # hybrid-grid costs
-            # hexagons[f'{demand_center} hybrid PV capacity (MW)'] = hybrid_pv_capacities,
-            # hexagons[f'{demand_center} hybrid Wind capacity (MW)'] = hybrid_wind_capacities,
-            # hexagons[f'{demand_center} hybrid Battery capacity (MW)'] = hybrid_battery_capacities,
-            # hexagons[f'{demand_center} hybrid grid capacity (MW)'] = hybrid_grid_capacities,
-            # hexagons[f'{demand_center} hybrid total energy cost (euros/kg/year)'] = hybrid_totE_costs / product_quantity,
-            # hexagons[f'{demand_center} hybrid lcoe (euros/kWh)'] = hybrid_lcoes,
+            for gen, capacities in hybrid_generators_capacities.items():
+                hexagons[f'{demand_center} hybrid {gen} capacity (MW)'] = capacities
+            hexagons[f'{demand_center} hybrid battery capacity (MW)'] = hybrid_battery_capacities
+            hexagons[f'{demand_center} hybrid grid capacity (MW)'] = hybrid_grid_capacities
+            hexagons[f'{demand_center} hybrid total energy cost ({currency}/kg/year)'] = (hybrid_E_costs + grid_construction_costs) / annual_demand_quantity
+            hexagons[f'{demand_center} hybrid lcoe ({currency}/kWh)'] = hybrid_lcoes
             
-            # -- Done the below
             # grid costs
-            hexagons[f'{demand_center} grid construction (euros/kg/year)'] = grid_construction_costs
-            hexagons[f'{demand_center} grid total energy cost (euros/kg/year)'] = ongrid_totE_costs 
+            hexagons[f'{demand_center} grid construction ({currency}/kg/year)'] = grid_construction_costs
+            hexagons[f'{demand_center} grid total energy cost ({currency}/kg/year)'] = ongrid_totE_costs 
             hexagons[f'{demand_center} grid capacity (MW)'] = grid_capacities
-            hexagons[f'{demand_center} grid lcoe (euros/kWh)'] = grid_lcoes
+            hexagons[f'{demand_center} grid lcoe ({currency}/kWh)'] = grid_lcoes
 
         else:
             for gen, capacities in generators_capacities.items():

@@ -2,7 +2,7 @@
 scenario:
   country: ['NA']
   weather_year: [2023]
-  # Can be 'hydrogen' or 'ammonia'
+  # Can be 'hydrogen' or 'ammonia' or 'copper'
   plant_type: 'ammonia'
 
 # Weather data:

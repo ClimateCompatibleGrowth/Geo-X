@@ -31,7 +31,7 @@ def main():
     country_params_filepath = snakemake.input.country_parameters
     transport_params_filepath = snakemake.input.transport_parameters
 
-    if plant_type == 'minx':
+    if plant_type == 'copper':
         rail_params_filepath = f'parameters/{snakemake.wildcards.country}/{snakemake.wildcards.plant_type}/rail_parameters.xlsx'
         conversion_params_filepath = f'parameters/{snakemake.wildcards.country}/{snakemake.wildcards.plant_type}/conversion_parameters.xlsx'
         feedstock_center_list = pd.read_excel(demand_params_filepath,
@@ -69,7 +69,7 @@ def main():
     short_road_capex = infra_data.at['Short road','CAPEX']
     long_road_opex = infra_data.at['Long road','OPEX']
     short_road_opex = infra_data.at['Short road','OPEX']
-    if plant_type == 'minx':
+    if plant_type == 'copper':
         long_rail_capex = infra_data.at['Long rail','CAPEX']
         short_rail_capex = infra_data.at['Short rail','CAPEX']
         long_rail_opex = infra_data.at['Long rail','OPEX']
@@ -92,7 +92,7 @@ def main():
     # Find closest hexagon to demand
     demand_points_gdf["nearest hexidx"] = [find_nearest_hex(idx, hexagon_to_demand_distance_matrix) for idx in demand_points_gdf.index]
 
-    if plant_type == 'minx':
+    if plant_type == 'copper':
         # Convert feedstock locations into a geodataframe
         feedstock_points_gdf = gpd.GeoDataFrame(feedstock_center_list, geometry=[Point(xy) for xy in zip(feedstock_center_list['Lon [deg]'], feedstock_center_list['Lat [deg]'])]).set_crs(epsg=4326)
         # Calculate distances to feedstock
@@ -141,7 +141,7 @@ def main():
         road_construction_costs = np.zeros(len_hexagons)
         trucking_states = np.zeros(len_hexagons,dtype='<U10')
         trucking_costs = np.zeros(len_hexagons)
-        if plant_type == 'minx':
+        if plant_type == 'copper':
             facility_annual_cost_per_kg = np.zeros(len_hexagons)
             facility_annual_capex = np.zeros(len_hexagons)
             facility_annual_opex = np.zeros(len_hexagons)
@@ -151,13 +151,14 @@ def main():
             demand_train_costs = np.zeros(len_hexagons)
             feedstocks_train_costs = np.zeros(len_hexagons)
             train_costs = np.zeros(len_hexagons)
+            feedstock_costs = np.zeros(len_hexagons)
         else:
             pipeline_costs = np.zeros(len_hexagons)
 
         if plant_type == 'hydrogen':
             if demand_state not in ['500 bar', 'LH2', 'NH3', 'LOHC', "CuAnode"]:
                 raise NotImplementedError(f'{demand_state} demand not supported.')
-        elif plant_type == 'minx':
+        elif plant_type == 'copper':
             if demand_state not in ["CuAnode", "CuCathode"]:
                 raise NotImplementedError(f'{demand_state} demand not supported.')
             else:
@@ -178,6 +179,7 @@ def main():
         # Loop through all hexagons
         for i in range(len_hexagons):
             print(f"Currently optimising {i+1} of {len_hexagons} hexagons...")
+            # Is road_dist not needed in the hexagons then?
             dist_to_road = hexagons['road_dist'][i]
             hex_geometry = hexagons['geometry'][i]
             
@@ -192,7 +194,8 @@ def main():
             # label demand location under consideration
             # Different calculations dependent if in demand location or not
             
-            if plant_type == "minx":
+            if plant_type == "copper":
+                feedstock_costs[i] = cost_of_feedstock
                 # determine feedstock sources
                 feedstock_sources, feedstock_ranked_idxs = determine_feedstock_sources(feedstock_points_gdf,
                                                                                         hexagon_to_feedstock_distance_matrix,
@@ -211,7 +214,7 @@ def main():
 
             # If the hexagon contains the demand location:
             if hex_geometry.contains(demand_location) == True:
-                if plant_type == 'minx':
+                if plant_type == 'copper':
                     feedstock_road_construction_costs = 0
                     feedstocks_trucking_cost = 0
                     feedstocks_train_cost = 0
@@ -285,7 +288,7 @@ def main():
                     trucking_states[i] = f"{demand_center} hexagon"
             # Else, if the hexagon does not contain the demand center:
             else:
-                if plant_type == 'minx':
+                if plant_type == 'copper':
                     # Forces only consideration of the demand center hexagon
                     if snakemake.config['restrict_hexagons']:
                         facility_annual_cost_per_kg[i] = np.nan
@@ -474,7 +477,7 @@ def main():
 
         print("\nOptimisation complete.\n")
         # Hexagon file updated with each demand center's costs and states
-        if plant_type == 'minx':
+        if plant_type == 'copper':
             # Facility costs
             # Below this with up to the space have been calculated
             hexagons[f'{demand_center} annual facility costs ({currency}/kg/year)'] = facility_annual_cost_per_kg
@@ -496,7 +499,8 @@ def main():
             # --- This below has already been calculated above, you just have to create the arrays to store in the info in.
             # --- Also, do we need this information?
             # hexagons[f'{demand_center} feedstock quantity (kg/year)'] = feedstock_quantities 
-            # hexagons[f'{demand_center} feedstock cost ({currency}/kg/year)'] = feedstock_costs / product_quantity
+            # Used in total_costs.py
+            hexagons[f'{demand_center} feedstock cost ({currency}/kg/year)'] = feedstock_costs / annual_demand_quantity
             # hexagons[f'{demand_center} feedstock locs'] = feedstock_locs
         else:
             hexagons[f'{demand_center} road construction costs'] = road_construction_costs

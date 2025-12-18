@@ -20,7 +20,7 @@ def main():
 
     water_transport_cost = water_data[f'Water transport cost ({currency}/100 km/m3)']
     water_spec_cost = water_data[f'Water specific cost ({currency}/m3)']
-    if plant_type == "minx":
+    if plant_type == "copper":
         conversion_params_filepath = f'parameters/{snakemake.wildcards.country}/{snakemake.wildcards.plant_type}/conversion_parameters.xlsx'
         demand_params_filepath = f'parameters/{snakemake.wildcards.country}/{snakemake.wildcards.plant_type}/demand_parameters.xlsx'
         demand_center_list = pd.read_excel(demand_params_filepath,
@@ -49,7 +49,7 @@ def main():
         h2o_costs_ocean = np.zeros(len_hexagons)
         min_h2o_costs = np.zeros(len_hexagons)
     
-    if plant_type == "minx":
+    if plant_type == "copper":
         for demand_center in demand_centers:
             print(f"\Calculating water costs for {demand_center}...")
             annual_demand_quantity = demand_center_list.loc[demand_center,'Annual demand [kg/a]']
