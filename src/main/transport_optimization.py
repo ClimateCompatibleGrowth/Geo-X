@@ -24,7 +24,6 @@ from functions import cheapest_trucking_strategy, h2_conversion_stand, \
 from utils import check_folder_exists
 
 def main():
-    file = open("file.txt", "a")
     plant_type = snakemake.wildcards.plant_type
     tech_params_filepath = snakemake.input.technology_parameters
     demand_params_filepath = snakemake.input.demand_parameters
@@ -32,12 +31,10 @@ def main():
     transport_params_filepath = snakemake.input.transport_parameters
 
     if plant_type == 'copper':
-        rail_params_filepath = f'parameters/{snakemake.wildcards.country}/{snakemake.wildcards.plant_type}/rail_parameters.xlsx'
         conversion_params_filepath = f'parameters/{snakemake.wildcards.country}/{snakemake.wildcards.plant_type}/conversion_parameters.xlsx'
         feedstock_center_list = pd.read_excel(demand_params_filepath,
                                     sheet_name='Feedstock (kg.year-1)',
                                       index_col='Feedstock center')
-        needs_rail_construction = snakemake.config["transport"]["rail_construction"]
     else:
         pipeline_params_filepath = f'parameters/{snakemake.wildcards.country}/{snakemake.wildcards.plant_type}/pipeline_parameters.xlsx'
         if plant_type == "hydrogen":
@@ -69,11 +66,6 @@ def main():
     short_road_capex = infra_data.at['Short road','CAPEX']
     long_road_opex = infra_data.at['Long road','OPEX']
     short_road_opex = infra_data.at['Short road','OPEX']
-    if plant_type == 'copper':
-        long_rail_capex = infra_data.at['Long rail','CAPEX']
-        short_rail_capex = infra_data.at['Short rail','CAPEX']
-        long_rail_opex = infra_data.at['Long rail','OPEX']
-        short_rail_opex = infra_data.at['Short rail','OPEX']
 
     # Prices from the country excel file
     currency = snakemake.config["currency"]
@@ -100,17 +92,8 @@ def main():
         # Find closest hexagon to feedstock
         feedstock_points_gdf["nearest hexidx"] = [find_nearest_hex(idx, hexagon_to_feedstock_distance_matrix) for idx in feedstock_points_gdf.index]
 
-        # Calculate rail construction costs
-        if needs_rail_construction:
-            hexagons_rail_construction = hexagons.apply(calculate_construction_costs,
-                                                                args=(infrastructure_interest_rate,
-                                                                    infrastructure_lifetime,
-                                                                    long_rail_capex,
-                                                                    short_rail_capex,
-                                                                    long_rail_opex,
-                                                                    short_rail_opex,
-                                                                    'rail'),
-                                                                axis=1)
+        fs_output_path = f"resources/feedstocks_transport_{snakemake.wildcards.country}_{snakemake.wildcards.plant_type}.geojson"
+        feedstock_points_gdf.to_file(fs_output_path, driver='GeoJSON', encoding='utf-8')
             
     # Calculate road construction costs
     if needs_road_construction:
@@ -121,7 +104,7 @@ def main():
                                                             short_road_capex,
                                                             long_road_opex,
                                                             short_road_opex,
-                                                            'road'),
+                                                            'road_dist'),
                                                     axis=1)
         
     # Calculate cost of hydrogen state conversion and transportation for demand
@@ -136,6 +119,12 @@ def main():
         demand_state = demand_center_list.loc[demand_center,'Demand state']
         demand_hix = demand_points_gdf["nearest hexidx"][demand_center]
 
+            
+        transport_params = pd.read_excel(transport_params_filepath,
+                                            sheet_name = demand_state,
+                                            index_col = 'Parameter'
+                                            ).squeeze('columns')
+        
         # Storage arrays containing zeros to be filled with costs and states or
         # left as zeros, as necessary
         road_construction_costs = np.zeros(len_hexagons)
@@ -147,11 +136,10 @@ def main():
             facility_annual_opex = np.zeros(len_hexagons)
             demand_trucking_costs = np.zeros(len_hexagons)
             feedstocks_trucking_costs = np.zeros(len_hexagons)
-            rail_construction_costs = np.zeros(len_hexagons)
-            demand_train_costs = np.zeros(len_hexagons)
-            feedstocks_train_costs = np.zeros(len_hexagons)
-            train_costs = np.zeros(len_hexagons)
             feedstock_costs = np.zeros(len_hexagons)
+            feedstock_quantities = np.zeros(len_hexagons)
+            diesel_costs = np.zeros(len_hexagons)
+            diesel_demands = np.zeros(len_hexagons)
         else:
             pipeline_costs = np.zeros(len_hexagons)
 
@@ -161,15 +149,26 @@ def main():
         elif plant_type == 'copper':
             if demand_state not in ["CuAnode", "CuCathode"]:
                 raise NotImplementedError(f'{demand_state} demand not supported.')
-            else:
-                conversion_params = pd.read_excel(conversion_params_filepath,
-                                    sheet_name=demand_state,
-                                    index_col='Parameter',)
+            
+            conversion_params = pd.read_excel(conversion_params_filepath,
+                                    sheet_name = demand_state,
+                                    index_col = 'Parameter').squeeze('columns')
+            
+            cucon_transport_params = pd.read_excel(transport_params_filepath,
+                                            sheet_name = "CuConcentrate",
+                                            index_col = 'Parameter'
+                                            ).squeeze('columns')
+
+            # Calculating diesel costs and demand
+            diesel_unit_demand = conversion_params.loc["Diesel demand (kWh per kg product)"]
+            diesel_demand = diesel_unit_demand * annual_demand_quantity
+            diesel_cost = diesel_demand * country_params[f'Diesel price ({currency}/kWh)'].iloc[0]
 
             # -- BELOW WOULD CAUSE ISSUES FOR FUTURE FILES, DOES THIS NEED TO BE DONE?
             # skip if equal to zero or NA
             if ((annual_demand_quantity==0.0) or (np.isnan(annual_demand_quantity))):
                 continue
+            # --
             feedstock_quantity = annual_demand_quantity / float(conversion_params.loc["Efficiency (kg product / kg feedstock)"])
             cost_of_feedstock = (feedstock_quantity * float(conversion_params.loc["Feedstock price (euros per kg feedstock)"]))
 
@@ -179,8 +178,6 @@ def main():
         # Loop through all hexagons
         for i in range(len_hexagons):
             print(f"Currently optimising {i+1} of {len_hexagons} hexagons...")
-            # Is road_dist not needed in the hexagons then?
-            dist_to_road = hexagons['road_dist'][i]
             hex_geometry = hexagons['geometry'][i]
             
             # Calculating distance to demand
@@ -195,23 +192,24 @@ def main():
             # Different calculations dependent if in demand location or not
             
             if plant_type == "copper":
-                feedstock_costs[i] = cost_of_feedstock
+                feedstock_costs[i] = cost_of_feedstock / annual_demand_quantity
+                feedstock_quantities[i] = feedstock_quantity
                 # determine feedstock sources
-                feedstock_sources, feedstock_ranked_idxs = determine_feedstock_sources(feedstock_points_gdf,
-                                                                                        hexagon_to_feedstock_distance_matrix,
-                                                                                        i,
-                                                                                        feedstock_quantity,file)
-                # --Below is misc and is just added to the hexagon and not used anywhere else
-                # feedstock_locs[i] = json.dumps(list(feedstock_ranked_idxs.values))
+                feedstock_sources = determine_feedstock_sources(feedstock_points_gdf,
+                                                                hexagon_to_feedstock_distance_matrix,
+                                                                i,
+                                                                feedstock_quantity)
 
                 # Facility costs need same calculation for all hexagons
                 if hex_geometry.contains(demand_location) == True or snakemake.config['restrict_hexagons'] == False:
-                    facility_annual_capex[i], facility_annual_opex[i] = mineral_conversion_facility(demand_state,
-                                                                                                    annual_demand_quantity,
+                    facility_annual_capex[i], facility_annual_opex[i] = mineral_conversion_facility(annual_demand_quantity,
                                                                                                     plant_interest_rate,
-                                                                                                    conversion_params_filepath)
+                                                                                                    conversion_params)
                     facility_annual_cost_per_kg[i] = facility_annual_capex[i] + facility_annual_opex[i]
 
+                # Store diesel information
+                diesel_costs[i] = diesel_cost / annual_demand_quantity
+                diesel_demands[i] = diesel_demand / annual_demand_quantity
             # If the hexagon contains the demand location:
             if hex_geometry.contains(demand_location) == True:
                 if plant_type == 'copper':
@@ -231,34 +229,12 @@ def main():
                                                                                     hexagon_to_feedstock_distance_matrix.loc[i, f],
                                                                                     source_quantity,
                                                                                     infrastructure_interest_rate,
-                                                                                    transport_params_filepath,
+                                                                                    cucon_transport_params,
                                                                                     currency)
                             
-                            for f in feedstock_sources.index:
-                                source_quantity = feedstock_sources.loc[f, "Feedstock used [kg/year]"]
-                                feedstocks_train_cost += calculate_train_costs("CuConcentrate",
-                                                                                hexagon_to_feedstock_distance_matrix.loc[i, f],
-                                                                                source_quantity,
-                                                                                infrastructure_interest_rate,
-                                                                                rail_params_filepath,
-                                                                                currency)
-                    
-                    feedstocks_train_costs[i] = feedstocks_train_cost/annual_demand_quantity        
                     feedstocks_trucking_costs[i] = feedstocks_trucking_cost/annual_demand_quantity
                     road_construction_costs[i] = feedstock_road_construction_costs/ annual_demand_quantity
                     demand_trucking_costs[i] = np.nan
-
-                    # Calculate rail transport from feedstock
-                    feedstocks_train_cost = 0
-                    for f in feedstock_sources.index:
-                        source_quantity = feedstock_sources.loc[f, "Feedstock used [kg/year]"]
-                        feedstocks_train_cost += calculate_train_costs("CuConcentrate",
-                                                                        hexagon_to_feedstock_distance_matrix.loc[i, f],
-                                                                        source_quantity,
-                                                                        infrastructure_interest_rate,
-                                                                        rail_params_filepath,
-                                                                        currency)
-                    feedstocks_train_costs[i] = feedstocks_train_cost/annual_demand_quantity
                 elif plant_type == "hydrogen":
                     # Calculate cost of converting hydrogen to a demand state for local demand (i.e. no transport)
                     # State changed to label the hexagon with which demand center it contains
@@ -300,12 +276,6 @@ def main():
                         trucking_costs[i] = np.nan
                         feedstocks_trucking_costs[i] = np.nan
                         demand_trucking_costs[i] = np.nan
-                        
-                        # Rail costs
-                        rail_construction_costs[i] = np.nan
-                        demand_train_costs[i] = np.nan
-                        feedstocks_train_costs[i] = np.nan
-                        train_costs[i] = np.nan
                         continue
 
                     # Calculate the cost of constructing a road to the hexagon if needed
@@ -337,75 +307,26 @@ def main():
                                                                         hexagon_to_demand_distance_matrix.loc[i, demand_center],
                                                                         annual_demand_quantity,
                                                                         infrastructure_interest_rate,
-                                                                        transport_params_filepath,
+                                                                        transport_params,
                                                                         currency)/annual_demand_quantity
 
                     # Calculate trucking costs from feedstock
                     feedstocks_trucking_cost = 0
                     for f in feedstock_sources.index:
                         source_quantity = feedstock_sources.loc[f, "Feedstock used [kg/year]"]
-                        # file.write(f"{source_quantity}\n\n")
                         feedstock_hix = feedstock_points_gdf["nearest hexidx"][f]
 
-                        # if feedstock_hix != i:
-                        feedstocks_trucking_cost += calculate_trucking_costs("CuConcentrate",
-                                                                            hexagon_to_feedstock_distance_matrix.loc[i, f],
-                                                                            source_quantity,
-                                                                            infrastructure_interest_rate,
-                                                                            transport_params_filepath,
-                                                                            currency)
+                        if feedstock_hix != i:
+                            feedstocks_trucking_cost += calculate_trucking_costs("CuConcentrate",
+                                                                                hexagon_to_feedstock_distance_matrix.loc[i, f],
+                                                                                source_quantity,
+                                                                                infrastructure_interest_rate,
+                                                                                transport_params,
+                                                                                currency)
                     feedstocks_trucking_costs[i] = feedstocks_trucking_cost/annual_demand_quantity
                     
                     # Storing trucking totals
                     trucking_costs[i] = road_construction_costs[i] + feedstocks_trucking_costs[i] + demand_trucking_costs[i]
-
-                    # Calculate the cost of constructing a rail to the hexagon if needed
-                    if needs_rail_construction:
-                        # Build rail for hexagon and demand hexagon
-                        demand_rail_construction = (hexagons_rail_construction[i]
-                                                    + hexagons_rail_construction[demand_hix])
-                        
-                        # Calculating feedstock rail construction costs
-                        feedstock_rail_construction = 0
-                        for f in feedstock_sources.index:
-                            feedstock_hix = feedstock_points_gdf["nearest hexidx"][f]
-
-                            if feedstock_hix != i:
-                                # build rail for feedstock hexagon
-                                feedstock_rail_construction += hexagons_rail_construction[feedstock_hix]
-                        
-                        # Total rail construction costs
-                        rail_construction_costs[i] = (demand_rail_construction + 
-                                                    feedstock_rail_construction)/annual_demand_quantity
-                    elif hexagon_to_demand_distance_matrix.loc[i, demand_center]>0:
-                        # Else if hexagon cannot reach a rail (rail construction is not allowed 
-                        # and distance to rail is > 0), train is not viable:
-                        train_costs[i] = np.nan
-                        continue
-                    
-                    # Calculate rail transport to demand
-                    demand_train_costs[i] = calculate_train_costs(demand_state,
-                                                                hexagon_to_demand_distance_matrix.loc[i, demand_center],
-                                                                annual_demand_quantity,
-                                                                infrastructure_interest_rate,
-                                                                rail_params_filepath,
-                                                                currency)/annual_demand_quantity
-
-                    # Calculate rail transport from feedstock
-                    feedstocks_train_cost = 0
-                    for f in feedstock_sources.index:
-                        source_quantity = feedstock_sources.loc[f, "Feedstock used [kg/year]"]
-
-                        feedstocks_train_cost += calculate_train_costs("CuConcentrate",
-                                                                        hexagon_to_feedstock_distance_matrix.loc[i, f],
-                                                                        source_quantity,
-                                                                        infrastructure_interest_rate,
-                                                                        rail_params_filepath,
-                                                                        currency)
-                    feedstocks_train_costs[i] = feedstocks_train_cost/annual_demand_quantity
-
-                    # Storing train totals
-                    train_costs[i] = rail_construction_costs[i] + feedstocks_train_costs[i] + demand_train_costs[i]
                 elif plant_type == 'hydrogen':
                     # Calculate costs of constructing a pipeline to the hexagon if allowed
                     if needs_pipeline_construction== True:
@@ -441,7 +362,7 @@ def main():
                                                     heat_price,
                                                     infrastructure_interest_rate,
                                                     conversion_params_filepath,
-                                                    transport_params_filepath,
+                                                    transport_params,
                                                     currency)
                 elif plant_type == 'ammonia':
                     # Calculate costs of constructing a pipeline to the hexagon if allowed
@@ -471,7 +392,7 @@ def main():
                                                                 dist_to_demand, 
                                                                 annual_demand_quantity,
                                                                 infrastructure_interest_rate, 
-                                                                transport_params_filepath,
+                                                                transport_params,
                                                                 currency)/annual_demand_quantity
                     trucking_states[i] = "NH3"
 
@@ -479,7 +400,6 @@ def main():
         # Hexagon file updated with each demand center's costs and states
         if plant_type == 'copper':
             # Facility costs
-            # Below this with up to the space have been calculated
             hexagons[f'{demand_center} annual facility costs ({currency}/kg/year)'] = facility_annual_cost_per_kg
             hexagons[f'{demand_center} annual facility capex ({currency}/kg/year)'] = facility_annual_capex
             hexagons[f'{demand_center} annual facility opex ({currency}/kg/year)'] = facility_annual_opex
@@ -490,18 +410,13 @@ def main():
             hexagons[f'{demand_center} feedstock trucking transport costs ({currency}/kg/year)'] = feedstocks_trucking_costs
             hexagons[f'{demand_center} product trucking transport costs ({currency}/kg/year)'] = demand_trucking_costs
 
-            # Rail costs
-            hexagons[f'{demand_center} rail construction costs ({currency}/kg/year)'] = rail_construction_costs
-            hexagons[f'{demand_center} train transport costs ({currency}/kg/year)'] = train_costs  # cost of rail construction, supply conversion, train transport, and demand conversion
-            hexagons[f'{demand_center} feedstock train transport costs ({currency}/kg/year)'] = feedstocks_train_costs  # cost of road construction, supply conversion, trucking transport, and demand conversion
-            hexagons[f'{demand_center} product train transport costs ({currency}/kg/year)'] = demand_train_costs  # cost of road construction, supply conversion, trucking transport, and demand conversion
-
-            # --- This below has already been calculated above, you just have to create the arrays to store in the info in.
-            # --- Also, do we need this information?
-            # hexagons[f'{demand_center} feedstock quantity (kg/year)'] = feedstock_quantities 
-            # Used in total_costs.py
-            hexagons[f'{demand_center} feedstock cost ({currency}/kg/year)'] = feedstock_costs / annual_demand_quantity
-            # hexagons[f'{demand_center} feedstock locs'] = feedstock_locs
+            # Feedstock related
+            hexagons[f'{demand_center} feedstock quantity (kg/year)'] = feedstock_quantities 
+            hexagons[f'{demand_center} feedstock cost ({currency}/kg/year)'] = feedstock_costs
+            
+            # Diesel related
+            hexagons[f'{demand_center} diesel cost ({currency}/kg/year)'] = diesel_costs
+            hexagons[f'{demand_center} diesel usage (kWh/kg/year)'] = diesel_demands
         else:
             hexagons[f'{demand_center} road construction costs'] = road_construction_costs
             if plant_type == "hydrogen":
@@ -513,7 +428,6 @@ def main():
             hexagons[f'{demand_center} trucking state'] = trucking_states
 
     hexagons.to_file(str(snakemake.output), driver='GeoJSON', encoding='utf-8')
-    file.close()
 
 if __name__ == "__main__":
     main()

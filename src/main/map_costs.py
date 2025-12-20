@@ -64,7 +64,9 @@ def plot_and_save(crs, hexagons, name, legend_kwds, output_folder, figsize=(10,5
         )
 
     ax.set_title(name)
+    name = name.replace('/','_')
     fig.savefig(output_folder + f"/{name}.png", bbox_inches=bbox_inches)
+    print(f"SAVED TO {name} to {output_folder}")
     plt.close()
 
 if __name__ == "__main__":
@@ -93,86 +95,148 @@ if __name__ == "__main__":
     for demand_center in demand_centers:
         print(f"\nPlotting for {demand_center} begins...")
 
-        # Lowest LC in each location
-        plot_and_save(crs, hexagons, f'{demand_center} lowest cost', 
-                    {'label' : f'LC [{currency}/kg]'}, output_folder)
-        
-        # Production cost
-        plot_and_save(crs, hexagons, f'{demand_center} production cost',
-                    {'label' : f'Production LC [{currency}/kg]'}, output_folder)
-        
-         # Electrolyzer capacity
-        plot_and_save(crs, hexagons, f'{demand_center} electrolyzer capacity',
-                    {'label': 'Size (MW)'}, output_folder)
-    
-        # Electrolyzer costs
-        plot_and_save(crs, hexagons, f'{demand_center} electrolyzer costs',
-                    {'label': f'{currency}'}, output_folder)
-
-        # H2 storage capacity
-        plot_and_save(crs, hexagons, f'{demand_center} H2 storage capacity',
-                    {'label': 'Size (MW)'}, output_folder)
-    
-        # H2 storage costs
-        plot_and_save(crs, hexagons, f'{demand_center} H2 storage costs',
-                    {'label': f'{currency}'}, output_folder)
-        
-        # Battery capcity
-        plot_and_save(crs, hexagons, f'{demand_center} battery capacity', 
-                    {'label': 'Size (MW)'}, output_folder)
-    
-        # Battery costs
-        plot_and_save(crs, hexagons, f'{demand_center} battery costs',
-                    {'label': f'{currency}'}, output_folder)
-
-        for generator in generators:
-            # Generator capacity
-            plot_and_save(crs, hexagons, f'{demand_center} {generator} capacity',
-                        {'label': 'Capacity (MW)'}, output_folder)
-    
-            # Generator costs
-            plot_and_save(crs, hexagons, f'{demand_center} {generator} costs',
-                        {'label': f'{currency}'}, output_folder)
-        
-        for transport_method in transport_methods:
-            # Trucking/pipeline total cost
-            plot_and_save(crs, hexagons, f'{demand_center} {transport_method} total cost',
-                        {'label': f'LC [{currency}/kg]'}, output_folder)
-
-            # Trucking/ pipeline costs
-            if plant_type == "hydrogen":
-                if transport_method == "trucking":
-                    hexagons[f'{demand_center} total {transport_method} costs'] =\
-                        hexagons[f'{demand_center} {transport_method} transport and conversion costs']+\
-                            hexagons[f'{demand_center} road construction costs']
+        if plant_type == 'copper':
+            system_types = ['offgrid','hybrid','grid']
+            for type in system_types:
+                # Lowest LC in each location
+                plot_and_save(crs, hexagons, f'{demand_center} total {type} LCOP', 
+                            {'label' : f'LC [{currency}/kg]'}, output_folder)
+                
+                # Production cost
+                plot_and_save(crs, hexagons, f'{demand_center} {type} lcoe ({currency}/kWh)',
+                            {'label' : f'Production LC [{currency}/kg]'}, output_folder)
                     
-                    plot_and_save(crs, hexagons, f'{demand_center} total {transport_method} costs', 
-                        {'label' : f'{transport_method} cost [{currency}/kg]'}, output_folder)
-                elif transport_method == "pipeline":
-                    plot_and_save(crs, hexagons, f'{demand_center} {transport_method} transport and conversion costs', 
-                                {'label' : f'{transport_method} cost [{currency}/kg]'}, output_folder)
-            elif plant_type == "ammonia":
-                if transport_method == "trucking":
-                    hexagons[f'{demand_center} total {transport_method} costs'] =\
-                        hexagons[f'{demand_center} {transport_method} transport costs']+\
-                            hexagons[f'{demand_center} road construction costs']
+                if type == 'offgrid' or type == 'hybrid':
+                    # Battery capcity
+                    plot_and_save(crs, hexagons, f'{demand_center} {type} battery capacity (MW)', 
+                                {'label': 'Size (MW)'}, output_folder)
             
-                    plot_and_save(crs, hexagons, f'{demand_center} total {transport_method} costs', 
-                                {'label' : f'{transport_method} cost [{currency}/kg]'}, output_folder)
-                elif transport_method == "pipeline":
-                    plot_and_save(crs, hexagons, f'{demand_center} {transport_method} transport costs', 
-                                {'label': f'{transport_method} cost [{currency}/kg]'}, output_folder)
+                    # Battery costs
+                    plot_and_save(crs, hexagons, f'{demand_center} {type} battery costs',
+                                {'label': f'{currency}'}, output_folder)
+            
+                    for generator in generators:
+                        # Generator capacity
+                        plot_and_save(crs, hexagons, f'{demand_center} {type} {generator} capacity (MW)',
+                                    {'label': 'Capacity (MW)'}, output_folder)
+                
+                        # Generator costs
+                        plot_and_save(crs, hexagons, f'{demand_center} {type} {generator} costs',
+                                    {'label': f'{currency}'}, output_folder)
 
-    # Ocean water costs
-    plot_and_save(crs, hexagons, 'Ocean water cost',
-                {'label': f'Water cost [{currency}/kg H2]'}, output_folder)
+            # Total trucking costs
+            hexagons[f'{demand_center} total trucking costs ({currency}/kg/year)'] =\
+                hexagons[f'{demand_center} trucking transport costs ({currency}/kg/year)']+\
+                    hexagons[f'{demand_center} road construction costs ({currency}/kg/year)']
+                
+            plot_and_save(crs, hexagons, f'{demand_center} total trucking costs ({currency}/kg/year)', 
+                            {'label' : f'Trucking cost [{currency}/kg]'}, output_folder)
+            
+            # Ocean water costs
+            plot_and_save(crs, hexagons, f'{demand_center} ocean water cost ({currency}/kg/year)',
+                        {'label': f'Water cost [{currency}/kg H2]'}, output_folder)
 
-    plt.ticklabel_format(style='plain')
+            plt.ticklabel_format(style='plain')
 
-    # Freshwater costs
-    plot_and_save(crs, hexagons, 'Freshwater cost',
-                {'label': f'Water cost [{currency}/kg H2]'}, output_folder)
+            # Freshwater costs
+            plot_and_save(crs, hexagons, f'{demand_center} freshwater cost ({currency}/kg/year)',
+                        {'label': f'Water cost [{currency}/kg H2]'}, output_folder) 
+        else:
+            # Lowest LC in each location
+            plot_and_save(crs, hexagons, f'{demand_center} lowest cost', 
+                        {'label' : f'LC [{currency}/kg]'}, output_folder)
+            
+            # Production cost
+            plot_and_save(crs, hexagons, f'{demand_center} production cost',
+                        {'label' : f'Production LC [{currency}/kg]'}, output_folder)
+            
+            # Electrolyzer capacity
+            plot_and_save(crs, hexagons, f'{demand_center} electrolyzer capacity',
+                        {'label': 'Size (MW)'}, output_folder)
+            
+            # Electrolyzer costs
+            plot_and_save(crs, hexagons, f'{demand_center} electrolyzer costs',
+                        {'label': f'{currency}'}, output_folder)
+            
+            # H2 storage capacity
+            plot_and_save(crs, hexagons, f'{demand_center} H2 storage capacity',
+                        {'label': 'Size (MW)'}, output_folder)
+        
+            # H2 storage costs
+            plot_and_save(crs, hexagons, f'{demand_center} H2 storage costs',
+                        {'label': f'{currency}'}, output_folder)
+            
+            # HB & NH3 storage capacity and costs- ammonia only
+            if plant_type == 'ammomia':
+                plot_and_save(crs, hexagons, f'{demand_center} HB capacity',
+                            {'label': 'Size (MW)'}, output_folder)
+                
+                plot_and_save(crs, hexagons, f'{demand_center} HB costs',
+                            {'label': f'{currency}'}, output_folder)
+                
+                plot_and_save(crs, hexagons, f'{demand_center} NH3 storage capacity',
+                            {'label': 'Size (MW)'}, output_folder)
+                
+                plot_and_save(crs, hexagons, f'{demand_center} NH3 storage costs',
+                            {'label': f'{currency}'}, output_folder)
+                
+            # Battery capcity
+            plot_and_save(crs, hexagons, f'{demand_center} battery capacity', 
+                        {'label': 'Size (MW)'}, output_folder)
+        
+            # Battery costs
+            plot_and_save(crs, hexagons, f'{demand_center} battery costs',
+                        {'label': f'{currency}'}, output_folder)
 
-    plt.ticklabel_format(style='plain')
+            for generator in generators:
+                # Generator capacity
+                plot_and_save(crs, hexagons, f'{demand_center} {generator} capacity',
+                            {'label': 'Capacity (MW)'}, output_folder)
+        
+                # Generator costs
+                plot_and_save(crs, hexagons, f'{demand_center} {generator} costs',
+                            {'label': f'{currency}'}, output_folder)
+            
+            for transport_method in transport_methods:
+                # Trucking/pipeline total cost
+                plot_and_save(crs, hexagons, f'{demand_center} {transport_method} total cost',
+                            {'label': f'LC [{currency}/kg]'}, output_folder)
+
+                # Trucking/ pipeline costs
+                if plant_type == "hydrogen":
+                    if transport_method == "trucking":
+                        hexagons[f'{demand_center} total {transport_method} costs'] =\
+                            hexagons[f'{demand_center} {transport_method} transport and conversion costs']+\
+                                hexagons[f'{demand_center} road construction costs']
+                        
+                        plot_and_save(crs, hexagons, f'{demand_center} total {transport_method} costs', 
+                            {'label' : f'{transport_method} cost [{currency}/kg]'}, output_folder)
+                    elif transport_method == "pipeline":
+                        plot_and_save(crs, hexagons, f'{demand_center} {transport_method} transport and conversion costs', 
+                                    {'label' : f'{transport_method} cost [{currency}/kg]'}, output_folder)
+                elif plant_type == "ammonia":
+                    if transport_method == "trucking":
+                        hexagons[f'{demand_center} total {transport_method} costs'] =\
+                            hexagons[f'{demand_center} {transport_method} transport costs']+\
+                                hexagons[f'{demand_center} road construction costs']
+                
+                        plot_and_save(crs, hexagons, f'{demand_center} total {transport_method} costs', 
+                                    {'label' : f'{transport_method} cost [{currency}/kg]'}, output_folder)
+                    elif transport_method == "pipeline":
+                        plot_and_save(crs, hexagons, f'{demand_center} {transport_method} transport costs', 
+                                    {'label': f'{transport_method} cost [{currency}/kg]'}, output_folder)
+
+    if plant_type == 'hydrogen' or plant_type == 'ammonia':
+        # Ocean water costs
+        plot_and_save(crs, hexagons, 'Ocean water cost',
+                    {'label': f'Water cost [{currency}/kg H2]'}, output_folder)
+
+        plt.ticklabel_format(style='plain')
+
+        # Freshwater costs
+        plot_and_save(crs, hexagons, 'Freshwater cost',
+                    {'label': f'Water cost [{currency}/kg H2]'}, output_folder)
+
+        plt.ticklabel_format(style='plain')
 
     print("\nPlotting complete\n")

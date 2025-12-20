@@ -92,6 +92,49 @@ def grid_connection(demand, elec_kWh_per_kg, product_quantity, country_series):
     lcoe = grid_energy_cost / (elec_kWh_per_kg * demand).sum().iloc[0]  # currency/kWh
     return grid_energy_cost, lcoe, grid_energy_cost_per_kg, grid_capacity
 
+def estimate_offgrid_pop(df, elec_access, near_grid_uptake, avg_household):
+    """
+    The most basic estimate. Multiply the population per hexagon by the
+    national electricity access rate.
+
+    Parameters
+    ----------
+    population : TYPE
+        DESCRIPTION.
+    grid_dist : TYPE
+        DESCRIPTION.
+    elec_access : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    None.
+
+    """
+    df = df.copy()
+    # Calculate the off-grid population for distance_to_grid == 0 (40% of the population)
+    df['offgrid_population'] = df['pop'].where(df['grid_dist'] == 0, 0) * (100-near_grid_uptake)/100
+
+    # Calculate the total offgrid population based on the national average
+    total_population = df['pop'].sum()
+    total_offgrid_population = total_population * (100-elec_access)/100
+
+    # Sum of offgrid population for areas with distance_to_grid == 0
+    offgrid_population_assigned = df['offgrid_population'].sum()
+
+    # Calculate the remaining offgrid population to be distributed
+    remaining_offgrid_population = total_offgrid_population - offgrid_population_assigned
+
+    # Get the total population for areas with distance_to_grid > 0
+    remaining_population = df.loc[df['grid_dist'] > 0, 'pop'].sum()
+
+    # Calculate the offgrid population for areas with distance_to_grid > 0
+    df.loc[df['grid_dist'] > 0, 'offgrid_population'] = \
+        df['pop'] * (remaining_offgrid_population / remaining_population)
+    
+    df["offgrid_households"] = df["offgrid_population"] / avg_household
+    return df
+
 def _nh3_pyomo_constraints(n, snapshots):
     """Includes a series of additional constraints which make the ammonia plant work as needed:
     i) Battery sizing
@@ -198,15 +241,25 @@ if __name__ == "__main__":
                                     index_col='Infrastructure')
         conversion_params_filepath = f'parameters/{snakemake.wildcards.country}/{snakemake.wildcards.plant_type}/conversion_parameters.xlsx'
         currency = snakemake.config["currency"]
+        # Whether to include sizing of off-grid system for feedstock
+        size_offgrid_feedstocks = snakemake.config['size offgrid feedstocks']
+        # Either False or Float (indicating % of hexagon offgrid population to consider, or absolute households)
+        community_energy_access = snakemake.config['community energy access']
+        feedstock_output = False
 
+        # estimate offgrid population
+        if community_energy_access != False:
+            hexagons = estimate_offgrid_pop(hexagons,
+                                            country_params["Electricity Access (%)"],
+                                            country_params["Near grid uptake (%)"],
+                                            country_params["Household size"])
+        
         # Calculate grid contruction costs
         if needs_grid_construction:
             hexagons_grid_construction = hexagons.apply(calculate_grid_construction,
                                                                     args=[infra_data, country_params],
                                                                     axis=1)
-            
-
-    
+                
     # Creating hydropower generator profile
     if "hydro" in generators:
         print("Creating hydropower profile for network")
@@ -387,6 +440,17 @@ if __name__ == "__main__":
                 gen_index += 1
 
             if plant_type == 'copper':
+                # Setting the energy access connections variable
+                if (community_energy_access != False) and (community_energy_access <= 1.0):
+                    # Use a percentage of households
+                    energy_access_connections = hexagons.loc[i, "offgrid_households"] * community_energy_access
+                elif (community_energy_access != False) and (community_energy_access > 1.0):
+                    # Use community_energy_access as absolute number of households
+                    energy_access_connections = community_energy_access
+                else:
+                    # Set as false - do not include
+                    energy_access_connections = False
+                    
                 # Grid only energy optimisation
                 if needs_grid_construction:
                     grid_construction_costs[i] = hexagons_grid_construction[i]/total_demand
@@ -418,14 +482,14 @@ if __name__ == "__main__":
                     for gen in generators:
                         offgrid_generators_capacities[gen].append(0)
                 else:
-                    energy_access_connections = False
                     if energy_access_connections != False:
-                        network_class.add_community_energy_demand(energy_access_connections)
+                        network_class.add_community_energy_demand(energy_access_connections,
+                                                                  f'data/community_elec_access_profile_{snakemake.wildcards.country}.csv')
 
                     network_class.n.lopf(solver_name=solver,
-                            solver_options = {'OutputFlag': 0},
-                            pyomo=False,
-                            )
+                                        solver_options = {'OutputFlag': 0},
+                                        pyomo=False,
+                                        )
                     
                     offgrid_E_costs[i] = network_class.n.objective
                     offgrid_lcoes[i] = offgrid_E_costs[i] / (network_class.n.generators_t.p.sum().sum()*1000)  # total system cost / energy produced (currency/kWh)
@@ -437,9 +501,9 @@ if __name__ == "__main__":
                 network_class.add_grid(country_series, currency)
 
                 network_class.n.lopf(solver_name=solver,
-                            solver_options = {'OutputFlag': 0},
-                            pyomo=False,
-                            )
+                                    solver_options = {'OutputFlag': 0},
+                                    pyomo=False,
+                                    )
                 
                 hybrid_E_costs[i] = network_class.n.objective + country_series[f"Electricity fixed charge ({currency}/year)"]
                 # Hybrid LCOE = total system cost / energy produced (currency/kWh)
@@ -448,7 +512,72 @@ if __name__ == "__main__":
                         hybrid_generators_capacities[gen].append(network_class.n.generators.p_nom_opt[gen.capitalize()])
                 hybrid_battery_capacities[i] = network_class.n.storage_units.p_nom_opt['Battery']
                 hybrid_grid_capacities[i] = network_class.n.generators.p_nom_opt['Grid']
-                
+
+                # Calculate offgrid system for feedstock centers if neccessary -- the results don't match geominx yet
+                if (size_offgrid_feedstocks) and feedstock_output != True:
+                    feedstock_points_gdf = gpd.read_file(f"resources/feedstocks_transport_{snakemake.wildcards.country}_{snakemake.wildcards.plant_type}.geojson")
+                    
+                    feedstocks_amount= len(feedstock_points_gdf)
+                    # Off-grid costs
+                    fs_lcoms = np.empty(feedstocks_amount)
+                    fs_generators_capacities = deepcopy(snakemake.config['generators_dict'])
+                    fs_battery_capacities = np.empty(feedstocks_amount)
+                    fs_generators = deepcopy(snakemake.config['generators_dict'])
+                    
+                    feedstock_index = pd.date_range(start_date, end_date, freq=freq, inclusive='left')
+                    
+                    for c in feedstock_points_gdf.index:
+                        hex_id = feedstock_points_gdf.loc[c, "nearest hexidx"]
+                        hourly_demand = (feedstock_points_gdf.loc[c, "Electrical Energy (MWh/year)"]*1000)/(365*24)  # kwh
+                        feedstock_demand_schedule = pd.DataFrame(hourly_demand,
+                                                        index=feedstock_index, columns = ['Demand'])
+                        fs_demand_resampled = feedstock_demand_schedule.resample(freq).mean()
+                        
+                        # Collecting information that is needed for Network set up.
+                        gen_index=0
+                        for gen in fs_generators:
+                            potential = profiles[gen_index].sel(hexagon=c)
+
+                            gen_capacity = snakemake.config['gen_capacity'][gen]
+                            if gen == "wind":
+                                max_capacity = hexagons.loc[c,'theo_turbines']*gen_capacity
+                            elif gen == "solar":
+                                max_capacity = hexagons.loc[c,'theo_pv']*gen_capacity
+                            # -- Need to change solar and wind names in data-prep to have the below only
+                            else:
+                                max_capacity = hexagons.loc[c,gen]*gen_capacity
+
+                            fs_generators[gen].append(potential)
+                            fs_generators[gen].append(max_capacity)
+                            gen_index += 1
+
+                        # Set up the network
+                        fs_network_class = Network(plant_type, fs_generators, pypsa.Network())
+                        # -- The below elec kWh per kg is hardcoded...
+                        fs_network_class.set_network(fs_demand_resampled, country_series,
+                                                    elec_kWh_per_kg=1.0, feedstocks_opt=True )
+                        fs_network_class.update_generators(country_series)
+
+                        fs_network_class.n.lopf(solver_name=solver,
+                                            solver_options = {'OutputFlag': 0},
+                                            pyomo=False,
+                                            )
+                        
+                        fs_lcoms[c] = fs_network_class.n.objective / (fs_network_class.n.generators_t.p.sum().sum()*1000)  # total system cost / energy produced (currency/kWh)
+                        fs_battery_capacities[c] = fs_network_class.n.storage_units.p_nom_opt['Battery']
+                        for gen in fs_generators:
+                            fs_generators_capacities[gen].append(fs_network_class.n.generators.p_nom_opt[gen.capitalize()])
+                        
+                    # Store off-grid feedstock capacities and cost
+                    for gen, capacities in fs_generators_capacities.items():
+                        feedstock_points_gdf[f'Offgrid {gen} capacity (MW)'] = capacities
+                    feedstock_points_gdf['Offgrid battery capacity (MW)'] = fs_battery_capacities
+                    feedstock_points_gdf["Levlised cost of energy (euros/kg/year)"] = fs_lcoms
+                    
+                    # Output feedstocks information
+                    fs_output_path = f"results/feedstocks_lc_{snakemake.wildcards.country}_{snakemake.wildcards.plant_type}.geojson"
+                    feedstock_points_gdf.to_file(fs_output_path, driver='GeoJSON', encoding='utf-8')
+                    feedstock_output = True
             else:
                 # Check for water constraint before any solving occurs
                 if has_water_limit == True:
@@ -515,14 +644,14 @@ if __name__ == "__main__":
         print("\nOptimisation complete.\n")        
         # Updating results in hexagon file
         if plant_type == 'copper':
-            # # off-grid costs
+            # off-grid costs
             for gen, capacities in offgrid_generators_capacities.items():
                 hexagons[f'{demand_center} offgrid {gen} capacity (MW)'] = capacities
             hexagons[f'{demand_center} offgrid battery capacity (MW)'] = offgrid_battery_capacities
             hexagons[f'{demand_center} offgrid total energy cost ({currency}/kg/year)'] = offgrid_E_costs / annual_demand_quantity
             hexagons[f'{demand_center} offgrid lcoe ({currency}/kWh)'] = offgrid_lcoes
             
-            # # hybrid-grid costs
+            # hybrid-grid costs
             for gen, capacities in hybrid_generators_capacities.items():
                 hexagons[f'{demand_center} hybrid {gen} capacity (MW)'] = capacities
             hexagons[f'{demand_center} hybrid battery capacity (MW)'] = hybrid_battery_capacities

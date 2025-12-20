@@ -45,7 +45,7 @@ class Network:
         self.generators = generators
         self.n = n
     
-    def set_network(self, demand_profile, country_series, demand_state=None, elec_kWh_per_kg=None):
+    def set_network(self, demand_profile, country_series, demand_state=None, elec_kWh_per_kg=None, feedstocks_opt=False):
         '''
         Sets up the network.
         
@@ -101,7 +101,7 @@ class Network:
                                         country_series['Plant lifetime (years)'])
             # Stops pointless cycling through storage
             self.n.links.loc['HydrogenCompression', 'marginal_cost'] = 0.0001
-        elif self.type == "copper":
+        elif self.type == "copper" and feedstocks_opt == False:
             # Import the design of the Cu plant into the network
             self.n.import_from_csv_folder("parameters/basic_cu_plant")
             
@@ -121,8 +121,28 @@ class Network:
                                                                      country_series['Plant lifetime (years)'])
             self.n.links.loc["Rectifier", "capital_cost"] = 50 * CRF(country_series['Plant interest rate'],
                                                                       country_series['Plant lifetime (years)'])
+        elif self.type == "copper" and feedstocks_opt == True:
+            # Import the design of the Cu plant into the network
+            self.n.import_from_csv_folder("parameters/basic_cu_plant")
+            
+            # Import demand profile
+            # Note: All flows are in MW or MWh, conversions for Concentrate done using 0.717 kWh per kg
+            # Add the load
+            self.n.add('Load',
+                f'Feedstock demand',
+                bus = 'AC_bus',
+                p_set = (demand_profile["Demand"] * elec_kWh_per_kg) / 1000,
+                )
+    
+            # Update and set capital costs
+            self.n.storage_units.loc["Battery", "capital_cost"] *= CRF(country_series['Solar interest rate'],
+                                                                  country_series['Solar lifetime (years)'])
+            self.n.links.loc["Inverter", "capital_cost"] = 50 * CRF(country_series['Plant interest rate'],
+                                                                     country_series['Plant lifetime (years)'])
+            self.n.links.loc["Rectifier", "capital_cost"] = 50 * CRF(country_series['Plant interest rate'],
+                                                                      country_series['Plant lifetime (years)'])
                                                                         
-    def add_community_energy_demand(self, energy_access_connections, filepath='Data/community_elec_access_profile.csv'):
+    def add_community_energy_demand(self, energy_access_connections, filepath):
         '''
         Adds community demand as a load.
         

@@ -35,7 +35,7 @@ def CRF(interest, lifetime):
 
 
 def calculate_trucking_costs(transport_state, distance, quantity, interest, 
-                             transport_params_filepath, currency):
+                             transport_params, currency):
     '''
     Calculates the annual cost of transporting the commodity by truck.
 
@@ -50,7 +50,7 @@ def calculate_trucking_costs(transport_state, distance, quantity, interest,
         annual amount of commodity to transport.
     interest : float
         interest rate on capital investments.
-    transport_params_filepath : string
+    transport_paramsh : string
         path to transport_parameters.xlsx file.
     currency : string
         type of currency that is used in the parameter files.
@@ -61,11 +61,6 @@ def calculate_trucking_costs(transport_state, distance, quantity, interest,
         annual cost of commodity transport with specified method.
     '''
     daily_quantity = quantity/365
-
-    transport_params = pd.read_excel(transport_params_filepath,
-                                         sheet_name = transport_state,
-                                         index_col = 'Parameter'
-                                         ).squeeze('columns')
 
     average_truck_speed = transport_params['Average truck speed (km/h)']
     working_hours = transport_params['Working hours (h/day)']
@@ -292,7 +287,7 @@ def h2_conversion_stand(final_state, quantity, electricity_costs, heat_costs,
 def cheapest_trucking_strategy(final_state, quantity, distance, 
                                 elec_costs, heat_costs, interest,
                                 conversion_params_filepath,
-                                transport_params_filepath, currency):
+                                transport_params, currency):
     '''
     Calculates the lowest-cost state to transport hydrogen by truck.
 
@@ -313,7 +308,7 @@ def cheapest_trucking_strategy(final_state, quantity, distance,
         (not including roads).
     conversion_params_filepath : string
         path to conversion parameters excel sheet.
-    transport_params_filepath : string
+    transport_params : string
         path to transport parameters excel sheet. 
     currency : string
         type of currency that is used in the parameter files.
@@ -327,42 +322,42 @@ def cheapest_trucking_strategy(final_state, quantity, distance,
     '''
     if final_state == '500 bar':
         dist_costs_500bar = h2_conversion_stand('500 bar', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('500 bar', distance, quantity, interest, transport_params_filepath, currency)
+                calculate_trucking_costs('500 bar', distance, quantity, interest, transport_params, currency)
     elif final_state == 'NH3':
         dist_costs_500bar = h2_conversion_stand('500 bar', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('500 bar',distance,quantity,interest,transport_params_filepath, currency) +\
+                calculate_trucking_costs('500 bar',distance,quantity,interest,transport_params, currency) +\
                     h2_conversion_stand(final_state+'_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
     else:  
         dist_costs_500bar = h2_conversion_stand('500 bar', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('500 bar',distance,quantity,interest,transport_params_filepath, currency) +\
+                calculate_trucking_costs('500 bar',distance,quantity,interest,transport_params, currency) +\
                     h2_conversion_stand(final_state, quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
     
     if final_state == 'LH2':
         dist_costs_lh2 = h2_conversion_stand('LH2', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('LH2',distance, quantity,interest,transport_params_filepath, currency)
+                calculate_trucking_costs('LH2',distance, quantity,interest,transport_params, currency)
     elif final_state == 'NH3':
         dist_costs_lh2 = h2_conversion_stand('LH2', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('LH2',distance,quantity,interest,transport_params_filepath, currency) +\
+                calculate_trucking_costs('LH2',distance,quantity,interest,transport_params, currency) +\
                     h2_conversion_stand(final_state+'_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
     else:
         dist_costs_lh2 = h2_conversion_stand('LH2', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('LH2',distance, quantity,interest,transport_params_filepath, currency) +\
+                calculate_trucking_costs('LH2',distance, quantity,interest,transport_params, currency) +\
                     h2_conversion_stand(final_state, quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
     
     if final_state == 'NH3':
         dist_costs_nh3 = h2_conversion_stand('NH3_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('NH3',distance, quantity, interest,transport_params_filepath, currency)
+                calculate_trucking_costs('NH3',distance, quantity, interest,transport_params, currency)
         dist_costs_lohc = h2_conversion_stand('LOHC_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('LOHC',distance, quantity, interest,transport_params_filepath, currency) +\
+                calculate_trucking_costs('LOHC',distance, quantity, interest,transport_params, currency) +\
                     h2_conversion_stand('LOHC_unload', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
                         h2_conversion_stand('NH3_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
     else:
         dist_costs_nh3 = h2_conversion_stand('NH3_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('NH3',distance, quantity,interest,transport_params_filepath, currency) +\
+                calculate_trucking_costs('NH3',distance, quantity,interest,transport_params, currency) +\
                     h2_conversion_stand('NH3_unload', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
                         h2_conversion_stand(final_state, quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
         dist_costs_lohc = h2_conversion_stand('LOHC_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('LOHC',distance, quantity,interest,transport_params_filepath, currency) +\
+                calculate_trucking_costs('LOHC',distance, quantity,interest,transport_params, currency) +\
                     h2_conversion_stand('LOHC_unload', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
                         h2_conversion_stand(final_state, quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
 
@@ -597,16 +592,14 @@ def calculate_nh3_pipeline_costs(distance, quantity, elec_cost,
 
     return cost_per_unit, f"{pipeline_type} Pipeline"
 
-def mineral_conversion_facility(final_state, quantity, interest,
-                                conversion_params_filepath):
+def mineral_conversion_facility(quantity, interest,
+                                conversion_params):
     """
     Calculate the CAPEX cost and OPEX cost of a new mineral processing facility
     as annual equivalent value (euros/kg)
 
     Parameters
     ----------
-    final_state : TYPE
-        DESCRIPTION.
     quantity : TYPE
         DESCRIPTION.
     interest : TYPE
@@ -617,10 +610,6 @@ def mineral_conversion_facility(final_state, quantity, interest,
     None.
 
     """
-    conversion_params = pd.read_excel(conversion_params_filepath,
-                                             sheet_name = final_state,
-                                             index_col = 'Parameter'
-                                             )
     plant_lifetime = conversion_params.loc['Plant lifetime (a)']
     capex_exp_coef_A = conversion_params.loc["CapEx exp coef A (euros/tonne)"]
     capex_exp_coef_B = conversion_params.loc["CapEx exp coef B (euros/tonne)"]
@@ -654,8 +643,8 @@ def mineral_conversion_facility(final_state, quantity, interest,
 def calculate_construction_costs(hexagon, infrastructure_interest_rate,
                                 infrastructure_lifetime, long_capex,
                                 short_capex, short_opex, long_opex,
-                                construction_type):
-    dist = hexagon[f'{construction_type}_dist']
+                                construction_type_dist):
+    dist = hexagon[f'{construction_type_dist}']
     if dist==0:
         construction_costs = 0.
     elif dist<10:
@@ -680,6 +669,7 @@ def geodesic_matrix(gdf1, gdf2):
         for j, p2 in enumerate(gdf2.centroid):
             distances[i,j] = geopy.distance.geodesic((p1.y, p1.x),
                                                         (p2.y, p2.x)).km
+            print("here")
   
     return pd.DataFrame(distances, index=gdf1.index, columns=gdf2.index)
 
@@ -689,7 +679,7 @@ def find_nearest_hex(idx, hex_to_X_distance):
 
 def determine_feedstock_sources(feedstock_points_gdf,
                                 hexagon_to_feedstock_distance_matrix,
-                                hix, feedstock_quantity,file):
+                                hix, feedstock_quantity):
     feedstock_ranked = feedstock_points_gdf.merge(hexagon_to_feedstock_distance_matrix.loc[hix,:], left_index=True, right_index=True).sort_values(by=hix)[['Annual capacity [kg/a]']]
     feedstock_ranked["Cumulative [kg/year]"] = feedstock_ranked.cumsum()
     feedstock_ranked["Feedstock used [kg/year]"] = 0.0
@@ -703,9 +693,7 @@ def determine_feedstock_sources(feedstock_points_gdf,
         
     
     feedstock = feedstock_ranked.loc[:feedstock_ranked[feedstock_ranked["Cumulative [kg/year]"] >= feedstock_quantity].index[0], :]
-    file.write(f"FEEDSTOCK: {feedstock}\n\n")
-    feedstock_ranked_idxs = feedstock.index
-    return feedstock, feedstock_ranked_idxs
+    return feedstock
 
 def calculate_train_costs(transport_state, distance, quantity, interest, 
                              transport_params_filepath, currency):
@@ -720,8 +708,6 @@ def calculate_train_costs(transport_state, distance, quantity, interest,
 
     Parameters
     ----------
-    transport_state : string
-        state resource is transported in.
     distance : float
         distance between production site and demand site.
     quantity : float
