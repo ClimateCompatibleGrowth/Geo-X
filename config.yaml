@@ -3,7 +3,7 @@ scenario:
   country: ['UA']
   weather_year: [2023]
   # Can be 'hydrogen' or 'ammonia'
-  plant_type: 'hydrogen'
+  plant_type: 'ammonia'
 
 # Weather data:
 # Change to a number that would be added to the 'weather_year' above and used as
@@ -22,8 +22,14 @@ turbine: 'NREL_ReferenceTurbine_2020ATB_4MW'
 gen_capacity:
     solar: 1
     wind: 4
-    hydro: 1
-    geothermal: 1
+
+
+# Generic dispatchable generator (existing fleet):
+# p_nom per hexagon = hydro + nuclear from data/{country}/hex_final_{country}.geojson
+# marginal_cost unit: same currency as config, per MWh
+generic_generator:
+    marginal_cost: 100
+
 
 # Efficiency of generator plants:
 efficiency:
@@ -46,7 +52,7 @@ transport:
 # Make sure this matches the currency used in your parameter files
 currency: 'euros'
 
-h2_demand_flex: True
+h2_demand_flex: False
 h2_demand_flex_hours: 168 
-h2_demand_flex_power_fraction: 1.0
+h2_demand_flex_power_fraction: 0
 h2_demand_flex_energy_fraction: 1.0

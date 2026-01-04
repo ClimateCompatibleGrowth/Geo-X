@@ -19,6 +19,7 @@ import pandas as pd
 import pyomo.environ as pm
 from scipy.constants import physical_constants
 import xarray as xr
+import matplotlib.pyplot as plt
 import glob
 
 from network import Network
@@ -240,6 +241,288 @@ def _nh3_ramp_up(model, t):
     return model.link_p['HB', t] - old_rate <= \
         model.link_p_nom['HB'] * model.HB_max_ramp_up()
 
+def plot_dispatch(n, time, demand, hex, tran):
+    print("Plotting dispatch...")
+    fig, ax = plt.subplots(figsize=(6, 3))
+    
+    p_by_carrier = n.generators_t.p.loc[time]
+    # print("Generators shape:", p_by_carrier.shape)
+    # # Debug: inspect index info
+    # idx = p_by_carrier.index
+    # print("Index dtype:", idx.dtype)
+    # print("Index length:", len(idx))
+    # if len(idx) > 0:
+    #     print("Index range:", idx.min(), "->", idx.max())
+    #     print("First 5 index values:", idx[:5])
+    
+    # print("Time type:", type(time))
+
+    if not n.storage_units.empty:
+    
+        sto = (
+            n.storage_units_t.p.loc[time]
+        )
+        
+        p_by_carrier = pd.concat([p_by_carrier, sto], axis=1)
+    if not n.stores.empty:
+        sto = (
+            n.stores_t.p.loc[time]
+            )
+        p_by_carrier = pd.concat([p_by_carrier, sto], axis=1)
+    
+    p_by_carrier.where(p_by_carrier > 0).loc[time].plot.area(
+        ax=ax,
+        linewidth=0,
+    )
+    print(n.generators_t.p.shape) 
+    print(n.generators_t.p.columns)
+    print(type(time), repr(time))
+    print(p_by_carrier.shape, p_by_carrier.head())
+    
+    charge = p_by_carrier.where(p_by_carrier < 0).dropna(how="all", axis=1).loc[time]
+    
+    if not charge.empty:
+        charge.plot.area(
+            ax=ax,
+            linewidth=0,
+        )
+    
+    n.loads_t.p_set.sum(axis=1).loc[time].plot(ax=ax, c="k")
+    
+    plt.legend(loc=(1.05, 0.2))
+    ax.set_ylabel("MW")
+    ax.set_ylim(-1500, 2000)
+    fig.savefig(f'resources\{demand}_{hex}_temporal_{tran}_June.png', bbox_inches='tight')
+    plt.close()
+
+def plot_dispatch_2(n, time, demand, hex, tran):
+    """
+    Produces one plot per carrier. Each plot shows stacked positive (generation/discharge)
+    and stacked negative (consumption/charging) time series for the original components
+    (generators, storage_units, stores, and split links). Legend entries are the original
+    series names (component names) rather than only the carrier name.
+
+    Use: replace calls to plot_dispatch_2(...) with plot_dispatch_by_series(...)
+    """
+    p = n.generators_t.p.copy() if hasattr(n, "generators_t") else pd.DataFrame()
+    if not getattr(n, "storage_units", pd.DataFrame()).empty and hasattr(n.storage_units_t, "p"):
+        p = pd.concat([p, n.storage_units_t.p], axis=1)
+    if not getattr(n, "stores", pd.DataFrame()).empty and hasattr(n.stores_t, "p"):
+        p = pd.concat([p, n.stores_t.p], axis=1)
+
+    # Include link flows split into positive on receiving carrier and negative on sending carrier
+    print("hasattr links_t", hasattr(n, "links_t"))
+    #print("attribute links_t:", getattr(n, "links_t", None)). 
+    print("hasattr links_t.p0", hasattr(n.links_t, "p0"))
+    print("attribute links_t.p0:", getattr(n.links_t, "p0", None))
+    if hasattr(n, "links_t") and hasattr(n.links_t, "p0") and not n.links_t.p0.empty:
+        links_p = n.links_t.p0.copy()
+        print("Links header", links_p.head())
+        link_contrib = pd.DataFrame(index=links_p.index)
+        for ln in links_p.columns:
+            s = links_p[ln].fillna(0)
+            bus_from = None
+            bus_to = None
+            try:
+                if ln in n.links.index and "bus0" in n.links.columns:
+                    bus_from = n.links.loc[ln, "bus0"]
+            except Exception:
+                bus_from = None
+            try:
+                if ln in n.links.index and "bus1" in n.links.columns:
+                    bus_to = n.links.loc[ln, "bus1"]
+            except Exception:
+                bus_to = None
+
+            carrier_from = "unknown"
+            carrier_to = "unknown"
+            try:
+                if bus_from in getattr(n, "buses", pd.DataFrame()).index:
+                    carrier_from = n.buses.loc[bus_from, "carrier"]
+            except Exception:
+                carrier_from = "unknown"
+            try:
+                if bus_to in getattr(n, "buses", pd.DataFrame()).index:
+                    carrier_to = n.buses.loc[bus_to, "carrier"]
+            except Exception:
+                carrier_to = carrier_from if carrier_from != "unknown" else "unknown"
+
+            link_contrib[f"{carrier_from}__{ln}"] = s      # positive on receiving carrier
+            # link_contrib[f"{carrier_from}__{ln}"] = -s   # negative on sending carrier
+
+        p = pd.concat([p, link_contrib], axis=1)
+
+    # ensure datetime index
+    if not isinstance(p.index, pd.DatetimeIndex):
+        try:
+            p.index = pd.to_datetime(p.index)
+        except Exception:
+            print("Could not convert generators index to DatetimeIndex; aborting carrier-by-series plots.")
+            return
+
+    # prepare carrier map: column -> carrier
+    carrier_map = {}
+    for col in p.columns:
+        if col in getattr(n, "generators", pd.DataFrame()).index:
+            carrier_map[col] = n.generators.loc[col, 'carrier']
+        elif hasattr(n, 'storage_units') and col in getattr(n, "storage_units", pd.DataFrame()).index:
+            carrier_map[col] = n.storage_units.loc[col, 'carrier']
+        elif hasattr(n, 'stores') and col in getattr(n, "stores", pd.DataFrame()).index:
+            carrier_map[col] = n.stores.loc[col, 'carrier']
+        else:
+            # columns created earlier for links use a "{carrier}__{ln}" prefix
+            if "__" in col:
+                carrier_map[col] = col.split("__", 1)[0]
+            else:
+                carrier_map[col] = 'other'
+
+    pd.DataFrame.from_dict(carrier_map, orient='index', columns=['carrier']).to_csv(f"resources/{demand}_{hex}_{tran}.csv") 
+
+    # total load series for the black line
+    total_load = n.loads_t.p_set.sum(axis=1)
+
+    # time slicing
+    if isinstance(time, slice):
+        start = pd.to_datetime(time.start)
+        stop = pd.to_datetime(time.stop)
+        mask = (p.index >= start) & (p.index < stop)
+        if not mask.any():
+            print(f"No timestamps in requested slice {start} -> {stop}; skipping carrier plots.")
+            return
+
+    # iterate carriers
+    for carrier in sorted(set(carrier_map.values())):
+        cols = [c for c, ca in carrier_map.items() if ca == carrier]
+        if not cols:
+            continue
+        carrier_df = p[cols]
+
+        # slice if requested
+        try:
+            carrier_slice = carrier_df.loc[time]
+            load_slice = total_load.loc[time] if not total_load.empty else pd.Series(dtype=float)
+        except Exception:
+            # fallback boolean mask for slice compatibility
+            if isinstance(time, slice):
+                carrier_slice = carrier_df[(carrier_df.index >= start) & (carrier_df.index < stop)]
+                load_slice = total_load[(total_load.index >= start) & (total_load.index < stop)]
+            else:
+                carrier_slice = carrier_df
+                load_slice = total_load
+
+        if carrier_slice.empty:
+            print(f"Carrier '{carrier}' has no data in slice; skipping.")
+            continue
+
+        pos = carrier_slice.where(carrier_slice > 0).fillna(0)
+        neg = carrier_slice.where(carrier_slice < 0).fillna(0)
+
+        fig, ax = plt.subplots(figsize=(8, 3.5))
+        # stacked positive components (each series keeps its own name in the legend)
+        if not pos.empty and pos.sum().sum() != 0:
+            pos.plot.area(ax=ax, linewidth=0)
+
+        # stacked negative components (these will appear below zero)
+        if not neg.empty and neg.sum().sum() != 0:
+            neg.plot.area(ax=ax, linewidth=0)
+
+        # plot total load line
+        if not load_slice.empty:
+            load_slice.plot(ax=ax, color="k", linewidth=1, label="Total load")
+
+        ax.set_title(f"Carrier: {carrier} — {demand} hex {hex} ({tran})")
+        ax.set_ylabel("MW")
+        plt.legend(loc=(1.01, 0.2))
+        ax.set_ylim(-1500, 2000)
+        plt.tight_layout()
+        fname = f"resources/{demand}_{hex}_carrier_{carrier}_{tran}.png"
+        fig.savefig(fname, bbox_inches="tight")
+        plt.close(fig)
+        print(f"Saved carrier plot: {fname}")
+
+def save_operational_csv(n, time, demand, hex, tran):
+    """
+    Save operational time-series from network `n` for the given `time` window to a single CSV.
+
+    Signature matches plot_dispatch_2: (n, time, demand, hex, tran).
+    Produces: resources/{demand}_{hex}_ops_{tran}.csv
+    """
+    #import os
+    #os.makedirs("resources", exist_ok=True)
+
+    # collect time-series containers (prefer common attribute names)
+    ts_frames = []
+
+    if hasattr(n, "generators_t") and hasattr(n.generators_t, "p"):
+        ts_frames.append(n.generators_t.p.copy())
+
+    if hasattr(n, "storage_units_t") and hasattr(n.storage_units_t, "p"):
+        ts_frames.append(n.storage_units_t.p.copy())
+
+    if hasattr(n, "stores_t") and hasattr(n.stores_t, "p"):
+        ts_frames.append(n.stores_t.p.copy())
+
+    # links time-series: prefer .p then .p0 (PyPSA versions differ)
+    links_p = None
+    links_p1 = None
+    if hasattr(n, "links_t"):
+        if hasattr(n.links_t, "p"):
+            links_p = getattr(n.links_t, "p")
+        elif hasattr(n.links_t, "p0"):
+            links_p = getattr(n.links_t, "p0")
+            links_p1 = getattr(n.links_t, "p1")
+    if links_p is not None:
+        try:
+            ts_frames.append(links_p.copy())
+            ts_frames.append(links_p1.copy())
+        except Exception:
+            pass
+
+    # merge all series (align on index)
+    if ts_frames:
+        ops = pd.concat(ts_frames, axis=1)
+    else:
+        ops = pd.DataFrame()
+
+    # add loads / total load if available
+    total_load = None
+    if hasattr(n, "loads_t") and hasattr(n.loads_t, "p_set"):
+        try:
+            total_load = n.loads_t.p_set.sum(axis=1).rename("total_load")
+            # join will align indices
+            ops = ops.join(total_load, how="outer")
+        except Exception:
+            pass
+
+    # ensure datetime index where possible
+    if not isinstance(ops.index, pd.DatetimeIndex):
+        try:
+            ops.index = pd.to_datetime(ops.index)
+        except Exception:
+            # leave as-is if conversion fails
+            pass
+
+    # slice selection: support slice(...) or label-based selection
+    if isinstance(time, slice):
+        start = pd.to_datetime(time.start)
+        stop = pd.to_datetime(time.stop)
+        ops_slice = ops[(ops.index >= start) & (ops.index < stop)]
+    else:
+        try:
+            ops_slice = ops.loc[time]
+        except Exception:
+            # fallback -> return full ops
+            ops_slice = ops
+
+    if ops_slice.empty:
+        print(f"No operational data to save for slice {time}.")
+        return
+
+    fname = f"resources/{demand}_{hex}_ops_{tran}.csv"
+    # write CSV (preserve index as first column)
+    ops_slice.to_csv(fname, index=True)
+    print(f"Saved operational CSV: {fname}")
+
 if __name__ == "__main__":
     country_params_filepath = snakemake.input.country_parameters
     demand_params_filepath = snakemake.input.demand_parameters
@@ -270,12 +553,35 @@ if __name__ == "__main__":
     
     cutout = atlite.Cutout(cutout_filepath)
     layout = cutout.uniform_layout()
-    profiles = []
+    profiles = {}
     len_hexagons = len(hexagons)
     has_water_limit = snakemake.config['water']['has_limit']
     water_limit_amount = snakemake.config['water']['annual_limit']
     freq = snakemake.config['freq']
     plant_type = snakemake.wildcards.plant_type
+
+    generic_generator_cfg = snakemake.config.get("generic_generator", {})
+    if "existing" in generators:
+        if "marginal_cost" not in generic_generator_cfg:
+            raise KeyError(
+                "config.yaml requires generic_generator.marginal_cost when 'existing' is enabled in generators_dict."
+            )
+        existing_marginal_cost = float(generic_generator_cfg["marginal_cost"])
+
+        missing_cols = [c for c in ["hydro", "nuclear"] if c not in hexagons.columns]
+        if missing_cols:
+            raise KeyError(
+                f"Hexagon file must contain {missing_cols} for existing generator p_nom = hydro + nuclear."
+            )
+
+        existing_capacity_by_hex = (
+            pd.to_numeric(hexagons["hydro"], errors="coerce").fillna(0.0)
+            + pd.to_numeric(hexagons["nuclear"], errors="coerce").fillna(0.0)
+        )
+    else:
+        existing_marginal_cost = None
+        existing_capacity_by_hex = None
+
     
     # Creating hydropower generator profile
     if "hydro" in generators:
@@ -358,27 +664,41 @@ if __name__ == "__main__":
                                 layout = layout,
                                 shapes = hexagons,
                                 per_unit = True).resample(time=freq).mean()
-        solar_profile = solar_profile.rename(dict(dim_0='hexagon'))
-    
+        profiles["solar"] = solar_profile.rename(dict(dim_0='hexagon'))
+        pd.DataFrame(profiles["solar"]).to_csv(f"resources/{snakemake.wildcards.country}_solar_profile_{snakemake.wildcards.weather_year}.csv")
     # Creating wind generator profile
     if "wind" in generators:
         wind_profile = cutout.wind(turbine = snakemake.config["turbine"],
                                     layout = layout,
                                     shapes = hexagons,
                                     per_unit = True).resample(time=freq).mean()
-        wind_profile = wind_profile.rename(dict(dim_0='hexagon'))
+        profiles["wind"] = wind_profile.rename(dict(dim_0='hexagon'))
+        pd.DataFrame(profiles["wind"]).to_csv(f"resources/{snakemake.wildcards.country}_wind_profile_{snakemake.wildcards.weather_year}.csv")
+    
+    if "existing" in generators:
+        existing_time_index = pd.date_range(start_date, end_date, freq=freq, inclusive='left')
+        profiles["existing"] = xr.DataArray(
+            data=np.ones((len_hexagons, len(existing_time_index))),
+            dims=["hexagon", "time"],
+            coords={"hexagon": np.arange(len_hexagons), "time": existing_time_index},
+        )
+
+    for gen in generators:
+        if gen not in profiles:
+            raise ValueError(f"No profile was prepared for generator '{gen}'.")
 
     # Adding generators into profiles list
-    for gen in generators:
-        # profile = f'{gen}_profile'
-        if gen == 'solar':
-            profiles.append(solar_profile)
-        elif gen == 'wind':
-            profiles.append(wind_profile)
-        elif gen == 'hydro':
-            profiles.append(hydro_profile)
-        elif gen == 'geothermal':
-            profiles.append(geothermal_profile)
+    # for gen in generators:
+    #     # profile = f'{gen}_profile'
+    #     if gen == 'solar':
+    #         profiles.append(solar_profile)
+    #     elif gen == 'wind':
+    #         profiles.append(wind_profile)
+    #     elif gen == 'hydro':
+    #         profiles.append(hydro_profile)
+    #     elif gen == 'geothermal':
+    #         profiles.append(geothermal_profile)
+
 
     # Loop through all demand centers
     for demand_center in demand_centers:
@@ -389,6 +709,8 @@ if __name__ == "__main__":
         electrolyzer_capacities= np.zeros(len_hexagons)
         battery_capacities = np.zeros(len_hexagons)
         h2_storages= np.zeros(len_hexagons)
+        existing_generation = np.zeros(len_hexagons) if "existing" in snakemake.config['generators_dict'] else None
+
 
         # Ammonia extra storage variables
         if plant_type == "ammonia":
@@ -403,28 +725,34 @@ if __name__ == "__main__":
             print(f"\nCurrently optimising {i+1} of {len_hexagons} hexagons...")
             gen_index = 0
             generators = deepcopy(snakemake.config['generators_dict'])
-            
+
             # Creating demand schedule
             demand_schedule_index = pd.date_range(start_date, end_date, freq = "1H", inclusive='left')
             freq_demand_quantity = total_demand/demand_schedule_index.size
             demand_schedule = pd.DataFrame(freq_demand_quantity, index=demand_schedule_index, columns=['Demand'])
             demand_resampled_schedule = demand_schedule.resample(freq).mean()
-            
+
             # Collecting information that is needed for Network set up.
             for gen in generators:
-                potential = profiles[gen_index].sel(hexagon=i)
+                potential = profiles[gen].sel(hexagon=i)
 
-                gen_capacity = snakemake.config['gen_capacity'][gen]
                 if gen == "wind":
+                    gen_capacity = snakemake.config['gen_capacity'][gen]
                     max_capacity = hexagons.loc[i,'theo_turbines']*gen_capacity
                 elif gen == "solar":
+                    gen_capacity = snakemake.config['gen_capacity'][gen]
                     max_capacity = hexagons.loc[i,'theo_pv']*gen_capacity
-                # -- Need to change solar and wind names in data-prep to have the below only
+                elif gen == "existing":
+                    max_capacity = float(existing_capacity_by_hex.iloc[i])
                 else:
+                    gen_capacity = snakemake.config['gen_capacity'][gen]
                     max_capacity = hexagons.loc[i,gen]*gen_capacity
 
                 generators[gen].append(potential)
                 generators[gen].append(max_capacity)
+                if gen == "existing":
+                    generators[gen].append(existing_marginal_cost)
+
                 gen_index += 1
 
             # Check for water constraint before any solving occurs
@@ -449,6 +777,8 @@ if __name__ == "__main__":
                     electrolyzer_capacities[i] = np.nan
                     battery_capacities[i] = np.nan
                     h2_storages[i] = np.nan
+                    if existing_generation is not None:
+                        existing_generation[i] = np.nan
                     for gen in generators:
                         generators_capacities[gen].append(np.nan)
                     if plant_type == "ammonia": 
@@ -499,6 +829,14 @@ if __name__ == "__main__":
 
             for gen in generators:
                 generators_capacities[gen].append(network_class.n.generators.p_nom_opt[gen.capitalize()])
+            if existing_generation is not None:
+                if "Existing" in network_class.n.generators_t.p.columns:
+                    snapshot_weight = 8760 / len(network_class.n.snapshots)
+                    existing_generation[i] = (
+                        network_class.n.generators_t.p["Existing"].sum() * snapshot_weight
+                    )
+                else:
+                    existing_generation[i] = 0.0
         
         print("\nOptimisation complete.\n")        
         # Updating results in hexagon file
@@ -511,5 +849,8 @@ if __name__ == "__main__":
         if plant_type == "ammonia":        
             hexagons[f'{demand_center} NH3 storage capacity'] = nh3_storages
             hexagons[f'{demand_center} HB capacity'] = hb_capacities
+        if existing_generation is not None:
+            hexagons[f'{demand_center} existing generation'] = existing_generation
+
 
     hexagons.to_file(str(snakemake.output), driver='GeoJSON', encoding='utf-8')

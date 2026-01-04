@@ -17,6 +17,14 @@ if __name__ == "__main__":
     generators = snakemake.config['generators_dict']
     plant_type = snakemake.wildcards.plant_type
 
+    generic_generator_cfg = snakemake.config.get('generic_generator', {})
+    if "existing" in generators and "marginal_cost" not in generic_generator_cfg:
+        raise KeyError(
+            "config.yaml requires generic_generator.marginal_cost when 'existing' is enabled."
+        )
+    existing_marginal_cost = float(generic_generator_cfg.get('marginal_cost', 0.0))
+
+
     # Load necessary parameters
     demand_excel_path = snakemake.input.demand_parameters
     demand_parameters = pd.read_excel(demand_excel_path, index_col='Demand center')
@@ -52,6 +60,8 @@ if __name__ == "__main__":
     # For each demand center, get costs for each component
     for demand_center in demand_centers:
         print(f"\nCalculating for {demand_center} begins...")
+        annual_demand = demand_parameters.loc[demand_center, 'Annual demand [kg/a]']
+
   
         # Store CRF from plant data
         interest_plant = country_series['Plant interest rate']
@@ -85,7 +95,7 @@ if __name__ == "__main__":
         if plant_type == "hydrogen":
             capital_cost_h2_storage = stores_parameters.loc['Compressed H2 Store', 'capital_cost']# rename to match csv
         else:
-            capital_cost_h2_storage = stores_parameters.loc['Compressed H2 Store', 'capital_cost']# rename to match csv
+            capital_cost_h2_storage = stores_parameters.loc['CompressedH2Store', 'capital_cost']# rename to match csv
         hexagons[f'{demand_center} H2 storage costs'] = \
             hexagons[f'{demand_center} H2 storage capacity'] *\
                 capital_cost_h2_storage * crf_plant
@@ -106,16 +116,43 @@ if __name__ == "__main__":
         # Work out CRF, then work out the cost for each generator using the data 
         # for the country you are looking at
         for generator in generators:
+            if generator == "existing":
+                generation_col = f'{demand_center} existing generation'
+                if generation_col not in hexagons.columns:
+                    raise KeyError(
+                        f"Missing '{generation_col}' in hexagons. "
+                        "Run plant_optimization with existing generator output enabled."
+                    )
+
+                hexagons[f'{demand_center} {generator} costs'] = \
+                    hexagons[generation_col] * existing_marginal_cost
+                hexagons[f'{demand_center} LC - {generator} portion'] = \
+                    hexagons[f'{demand_center} {generator} costs'] / annual_demand
+                continue
+
             generator_capitalized = generator.capitalize()
             interest_generator = country_series[f'{generator_capitalized} interest rate']
             lifetime_generator = country_series[f'{generator_capitalized} lifetime (years)']
             crf_generator = CRF(interest_generator, lifetime_generator)
-            capital_cost_generator = generators_parameters.loc[f'{generator_capitalized}', 'capital_cost']
+            capital_cost_generator = generators_parameters.loc[generator_capitalized, 'capital_cost']
             hexagons[f'{demand_center} {generator} costs'] = \
                 hexagons[f'{demand_center} {generator} capacity'] * capital_cost_generator * crf_generator
             hexagons[f'{demand_center} LC - {generator} portion'] = \
-                hexagons[f'{demand_center} {generator} costs']/ \
-                    demand_parameters.loc[demand_center, 'Annual demand [kg/a]']
+                hexagons[f'{demand_center} {generator} costs'] / annual_demand
+            
+        lc_component_cols = [
+            f'{demand_center} LC - battery costs portion',
+            f'{demand_center} LC - electrolyzer portion',
+            f'{demand_center} LC - H2 storage portion',
+        ]
+        if plant_type == "ammonia":
+            lc_component_cols.append(f'{demand_center} LC - HB portion')
+        lc_component_cols.extend([f'{demand_center} LC - {g} portion' for g in generators])
+
+        hexagons[f'{demand_center} LC - production from components'] = \
+            hexagons[lc_component_cols].sum(axis=1)
+
+
             
     print("\nCalculations complete.\n")
     hexagons.to_file(snakemake.output[0], driver='GeoJSON', encoding='utf-8')

@@ -111,20 +111,47 @@ class Network:
         country_series: pandas Series
             interest rate and lifetime information.
         '''
-        # Send the generator data to the network
         for gen, gen_list in self.generators.items():
+            gen_name = gen.capitalize()
+
+            # Allow generators created programmatically (not only from CSV templates)
+            if gen_name not in self.n.generators.index:
+                self.n.add(
+                    "Generator",
+                    gen_name,
+                    bus="Power",
+                    carrier=gen,
+                    p_nom=0.0,
+                    p_nom_extendable=True,
+                    capital_cost=0.0,
+                    marginal_cost=0.0,
+                )
+
             if gen == "geothermal":
-                self.n.generators.loc[gen.capitalize(), "p_max_pu"] = gen_list[0]
+                self.n.generators.loc[gen_name, "p_max_pu"] = gen_list[0]
             else:
-                self.n.generators_t.p_max_pu[gen.capitalize()] = gen_list[0]
+                self.n.generators_t.p_max_pu[gen_name] = gen_list[0]
 
-            # Specify maximum capacity based on land use
-            self.n.generators.loc[gen.capitalize(),'p_nom_max'] = gen_list[1]
+            if gen == "existing":
+                if len(gen_list) < 3:
+                    raise ValueError(
+                        "Generator 'existing' expects [profile, p_nom, marginal_cost]."
+                    )
+                fixed_capacity = float(gen_list[1])
+                marginal_cost = float(gen_list[2])
 
-            # Specify technology-specific and country-specific WACC and lifetime here
-            self.n.generators.loc[gen.capitalize(),'capital_cost'] *= \
-                CRF(country_series[f'{gen.capitalize()} interest rate'], 
-                    country_series[f'{gen.capitalize()} lifetime (years)'])
+                self.n.generators.loc[gen_name, "p_nom_extendable"] = False
+                self.n.generators.loc[gen_name, "p_nom"] = fixed_capacity
+                self.n.generators.loc[gen_name, "p_nom_max"] = fixed_capacity
+                self.n.generators.loc[gen_name, "capital_cost"] = 0.0
+                self.n.generators.loc[gen_name, "marginal_cost"] = marginal_cost
+                continue
+
+            self.n.generators.loc[gen_name, 'p_nom_max'] = gen_list[1]
+            self.n.generators.loc[gen_name, 'capital_cost'] *= \
+                CRF(country_series[f'{gen_name} interest rate'],
+                    country_series[f'{gen_name} lifetime (years)'])
+
 
     def _create_override_components(self):
         """Set up new component attributes as required"""
