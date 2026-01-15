@@ -83,7 +83,7 @@ if __name__ == "__main__":
         
         # H2 Storage
         if plant_type == "hydrogen":
-            capital_cost_h2_storage = stores_parameters.loc['Compressed H2 Store', 'capital_cost']
+            capital_cost_h2_storage = stores_parameters.loc['CompressedH2Store', 'capital_cost']
         else:
             capital_cost_h2_storage = stores_parameters.loc['CompressedH2Store', 'capital_cost']
         hexagons[f'{demand_center} H2 storage costs'] = \
