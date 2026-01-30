@@ -37,7 +37,7 @@ def CRF(interest, lifetime):
 
 
 def calculate_trucking_costs(transport_state, distance, quantity, interest, 
-                             transport_params_filepath, currency):
+                             transport_params_filepath, currency, max_power_fraction = 0.0):
     '''
     Calculates the annual cost of transporting the commodity by truck.
 
@@ -89,13 +89,14 @@ def calculate_trucking_costs(transport_state, distance, quantity, interest,
 
     # Calculate deliveries needed per day
     amount_deliveries_needed = daily_quantity/net_capacity
+    amount_deliveries_needed_peak = amount_deliveries_needed * (1 + max_power_fraction)
     rounded_up_deliveries_needed = np.ceil(amount_deliveries_needed)
     # Calculate how many deliveries each truck can do per day
     deliveries_per_truck = working_hours/(loading_unloading_time +
                                           (2 * distance/average_truck_speed))
     
     # Deliveries per day / Deliveries per truck = Trucks per day
-    trailors_needed = np.ceil(amount_deliveries_needed/
+    trailors_needed = np.ceil(amount_deliveries_needed_peak/
                              deliveries_per_truck)
     total_drives_day = rounded_up_deliveries_needed
     if transport_state == 'NH3':
@@ -131,7 +132,7 @@ def calculate_trucking_costs(transport_state, distance, quantity, interest,
 
 
 def h2_conversion_stand(final_state, quantity, electricity_costs, heat_costs, 
-                        interest, conversion_params_filepath, currency):
+                        interest, conversion_params_filepath, currency, max_power_fraction = 0.0):
     '''
     Calculates the annual cost and electricity and heating demand for converting 
     hydrogen to a given state.
@@ -164,6 +165,7 @@ def h2_conversion_stand(final_state, quantity, electricity_costs, heat_costs,
         annual hydrogen conversion costs.
     '''
     daily_throughput = quantity/365
+    daily_throughput_max = daily_throughput * (1 + max_power_fraction)
     
     if final_state == 'standard condition':
         elec_demand = 0.0
@@ -189,7 +191,7 @@ def h2_conversion_stand(final_state, quantity, electricity_costs, heat_costs,
             elec_demand = elec_demand_per_kg_h2 * quantity
             heat_demand = 0 
 
-            capex_compressor = capex_coef * ((daily_throughput)**0.6038)
+            capex_compressor = capex_coef * ((daily_throughput_max)**0.6038)
 
             annual_costs = (capex_compressor * CRF(interest, compressor_lifetime)) +\
                                 (capex_compressor * opex_compressor) +\
@@ -206,8 +208,8 @@ def h2_conversion_stand(final_state, quantity, electricity_costs, heat_costs,
             
             heat_demand = 0
             elec_demand = electricity_unit_demand * quantity
-            capex_liquid_plant = capex_quadratic_coef * (daily_throughput**2) +\
-                                    capex_linear_coef * daily_throughput +\
+            capex_liquid_plant = capex_quadratic_coef * (daily_throughput_max**2) +\
+                                    capex_linear_coef * daily_throughput_max +\
                                         capex_constant
 
             annual_costs = (capex_liquid_plant * CRF(interest, liquid_plant_lifetime)) +\
@@ -294,7 +296,7 @@ def h2_conversion_stand(final_state, quantity, electricity_costs, heat_costs,
 def cheapest_trucking_strategy(final_state, quantity, distance, 
                                 elec_costs, heat_costs, interest,
                                 conversion_params_filepath,
-                                transport_params_filepath, currency):
+                                transport_params_filepath, currency, max_power_fraction=0.0):
     '''
     Calculates the lowest-cost state to transport hydrogen by truck.
 
@@ -328,45 +330,45 @@ def cheapest_trucking_strategy(final_state, quantity, distance,
         the lowest-cost state in which to transport hydrogen by truck.
     '''
     if final_state == '500 bar':
-        dist_costs_500bar = h2_conversion_stand('500 bar', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('500 bar', distance, quantity, interest, transport_params_filepath, currency)
+        dist_costs_500bar = h2_conversion_stand('500 bar', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency, max_power_fraction)[2] +\
+                calculate_trucking_costs('500 bar', distance, quantity, interest, transport_params_filepath, currency, max_power_fraction)
     elif final_state == 'NH3':
-        dist_costs_500bar = h2_conversion_stand('500 bar', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('500 bar',distance,quantity,interest,transport_params_filepath, currency) +\
-                    h2_conversion_stand(final_state+'_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
+        dist_costs_500bar = h2_conversion_stand('500 bar', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency, max_power_fraction)[2] +\
+                calculate_trucking_costs('500 bar',distance,quantity,interest,transport_params_filepath, currency, max_power_fraction) +\
+                    h2_conversion_stand(final_state+'_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency, max_power_fraction)[2]
     else:  
-        dist_costs_500bar = h2_conversion_stand('500 bar', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('500 bar',distance,quantity,interest,transport_params_filepath, currency) +\
-                    h2_conversion_stand(final_state, quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
-    
+        dist_costs_500bar = h2_conversion_stand('500 bar', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency, max_power_fraction)[2] +\
+                calculate_trucking_costs('500 bar',distance,quantity,interest,transport_params_filepath, currency, max_power_fraction) +\
+                    h2_conversion_stand(final_state, quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency, max_power_fraction)[2]
+
     if final_state == 'LH2':
-        dist_costs_lh2 = h2_conversion_stand('LH2', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('LH2',distance, quantity,interest,transport_params_filepath, currency)
+        dist_costs_lh2 = h2_conversion_stand('LH2', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency, max_power_fraction)[2] +\
+                calculate_trucking_costs('LH2',distance, quantity,interest,transport_params_filepath, currency, max_power_fraction)
     elif final_state == 'NH3':
-        dist_costs_lh2 = h2_conversion_stand('LH2', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('LH2',distance,quantity,interest,transport_params_filepath, currency) +\
-                    h2_conversion_stand(final_state+'_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
+        dist_costs_lh2 = h2_conversion_stand('LH2', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency, max_power_fraction)[2] +\
+                calculate_trucking_costs('LH2',distance,quantity,interest,transport_params_filepath, currency, max_power_fraction) +\
+                    h2_conversion_stand(final_state+'_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency, max_power_fraction)[2]
     else:
-        dist_costs_lh2 = h2_conversion_stand('LH2', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('LH2',distance, quantity,interest,transport_params_filepath, currency) +\
-                    h2_conversion_stand(final_state, quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
-    
+        dist_costs_lh2 = h2_conversion_stand('LH2', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency, max_power_fraction)[2] +\
+                calculate_trucking_costs('LH2',distance, quantity,interest,transport_params_filepath, currency, max_power_fraction) +\
+                    h2_conversion_stand(final_state, quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency, max_power_fraction)[2]
+
     if final_state == 'NH3':
-        dist_costs_nh3 = h2_conversion_stand('NH3_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('NH3',distance, quantity, interest,transport_params_filepath, currency)
-        dist_costs_lohc = h2_conversion_stand('LOHC_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('LOHC',distance, quantity, interest,transport_params_filepath, currency) +\
-                    h2_conversion_stand('LOHC_unload', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                        h2_conversion_stand('NH3_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
+        dist_costs_nh3 = h2_conversion_stand('NH3_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency, max_power_fraction)[2] +\
+                calculate_trucking_costs('NH3',distance, quantity, interest,transport_params_filepath, currency, max_power_fraction)
+        dist_costs_lohc = h2_conversion_stand('LOHC_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency, max_power_fraction)[2] +\
+                calculate_trucking_costs('LOHC',distance, quantity, interest,transport_params_filepath, currency, max_power_fraction) +\
+                    h2_conversion_stand('LOHC_unload', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency, max_power_fraction)[2] +\
+                        h2_conversion_stand('NH3_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency, max_power_fraction)[2]
     else:
-        dist_costs_nh3 = h2_conversion_stand('NH3_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('NH3',distance, quantity,interest,transport_params_filepath, currency) +\
-                    h2_conversion_stand('NH3_unload', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                        h2_conversion_stand(final_state, quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
-        dist_costs_lohc = h2_conversion_stand('LOHC_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('LOHC',distance, quantity,interest,transport_params_filepath, currency) +\
-                    h2_conversion_stand('LOHC_unload', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                        h2_conversion_stand(final_state, quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
+        dist_costs_nh3 = h2_conversion_stand('NH3_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency, max_power_fraction)[2] +\
+                calculate_trucking_costs('NH3',distance, quantity,interest,transport_params_filepath, currency, max_power_fraction) +\
+                    h2_conversion_stand('NH3_unload', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency, max_power_fraction)[2] +\
+                        h2_conversion_stand(final_state, quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency, max_power_fraction)[2]
+        dist_costs_lohc = h2_conversion_stand('LOHC_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency, max_power_fraction)[2] +\
+                calculate_trucking_costs('LOHC',distance, quantity,interest,transport_params_filepath, currency, max_power_fraction) +\
+                    h2_conversion_stand('LOHC_unload', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency, max_power_fraction)[2] +\
+                        h2_conversion_stand(final_state, quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency, max_power_fraction)[2]
 
     lowest_cost = np.nanmin([dist_costs_500bar, dist_costs_lh2, dist_costs_lohc, dist_costs_nh3])
     
@@ -390,7 +392,7 @@ def cheapest_pipeline_strategy(final_state, quantity, distance,
                                 conversion_params_filepath,
                                 pipeline_params_filepath,
                                 currency,
-                                elec_cost_grid = 0.0):
+                                elec_cost_grid = 0.0, max_power_fraction=0.0):
     '''
     Calculates the lowest-cost way to transport hydrogen via pipeline
 
@@ -427,21 +429,20 @@ def cheapest_pipeline_strategy(final_state, quantity, distance,
     pipeline_cost, pipeline_size = pipeline_costs(distance, quantity, 
                                                    elec_cost_grid, 
                                                    pipeline_params_filepath, 
-                                                   interest, currency)
+                                                   interest, currency, max_power_fraction)
     if final_state == 'NH3':
         dist_costs_pipeline = pipeline_cost +\
-                h2_conversion_stand(final_state+'_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]  
+                h2_conversion_stand(final_state+'_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency, max_power_fraction)[2]  
     else:
         dist_costs_pipeline = pipeline_cost +\
-                h2_conversion_stand(final_state, quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
-
+                h2_conversion_stand(final_state, quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency, max_power_fraction)[2]
     costs_per_unit = dist_costs_pipeline/quantity
     
     return costs_per_unit, pipeline_size
 
 
 def pipeline_costs(distance, quantity, elec_cost, pipeline_params_filepath, 
-                   interest, currency):
+                   interest, currency, max_power_fraction=0.0):
     '''
     Calculates the annualized cost of building a pipeline.
 
@@ -486,13 +487,15 @@ def pipeline_costs(distance, quantity, elec_cost, pipeline_params_filepath,
     med_max_throughput = (((med_max_capacity * (10**6))/33.333)) * 8760 * availability
     sml_max_throughput = (((sml_max_capacity * (10**6))/33.333)) * 8760 * availability
 
-    if quantity <= sml_max_throughput:
+    quantity_max = quantity * (1 + max_power_fraction)
+
+    if quantity_max <= sml_max_throughput:
         pipeline_type = 'Small'
         
-    elif quantity > sml_max_throughput and quantity <= med_max_throughput:
+    elif quantity_max > sml_max_throughput and quantity <= med_max_throughput:
         pipeline_type = 'Medium'
     
-    elif quantity > med_max_throughput and quantity <= large_max_throughput:
+    elif quantity_max > med_max_throughput and quantity <= large_max_throughput:
         pipeline_type = 'Large'
 
     else:

@@ -1,6 +1,6 @@
 # Wildcards:
 scenario:
-  country: ['GA']
+  country: ['UA']
   weather_year: [2023]
   # Can be 'hydrogen' or 'ammonia'
   plant_type: 'hydrogen'
@@ -45,3 +45,8 @@ transport:
 
 # Make sure this matches the currency used in your parameter files
 currency: 'euros'
+
+h2_demand_flex: True
+h2_demand_flex_hours: 168 
+h2_demand_flex_power_fraction: 1.0
+h2_demand_flex_energy_fraction: 1.0

@@ -61,6 +61,123 @@ def hydropower_potential_with_capacity(flowrate, head, capacity, eta):
 
     return capacity_factor
 
+# Helper: Add hydrogen demand flexibility buffer for load shifting (DSM)
+def add_h2_demand_flexibility_storage(n, flex_hours, *,
+                                     power_fraction=1.0,
+                                     energy_fraction=1.0,
+                                     cyclic=True,
+                                     name_prefix="H2DemandFlex"):
+    """Add a simple demand-flexibility buffer for hydrogen demand.
+
+    This implements *load shifting* (not shedding): a Store on a dedicated DSM bus
+    plus two Links (charge/discharge) connected to the hydrogen demand bus.
+
+    Intuition:
+      - Charging increases net demand in low-cost hours (pre-consumption).
+      - Discharging reduces net demand in high-cost hours (postponed demand).
+      - With `e_cyclic=True`, the buffer must end the optimisation horizon at the
+        same state as it started (net-zero over the horizon).
+
+    Parameters
+    ----------
+    n : pypsa.Network
+        The network to modify (in-place).
+    flex_hours : float
+        Approximate hours of demand that can be shifted (energy buffer size is
+        derived from the mean hydrogen demand).
+    power_fraction : float
+        Charging/discharging power limit as a fraction of peak hydrogen demand.
+        (1.0 ~ allow shifting at up to peak demand rate)
+    energy_fraction : float
+        Energy buffer scaling as a fraction of mean_demand * flex_hours.
+    cyclic : bool
+        Whether the DSM store is cyclic (recommended for pure shifting).
+    name_prefix : str
+        Prefix for component names.
+    """
+    try:
+        flex_hours = float(flex_hours)
+    except Exception:
+        return
+
+    if flex_hours <= 0:
+        return
+
+    # Need at least one load time series to infer sizing.
+    if getattr(n, "loads", None) is None or n.loads.empty:
+        return
+    if not hasattr(n, "loads_t") or not hasattr(n.loads_t, "p_set") or n.loads_t.p_set.empty:
+        return
+
+    # Identify the main hydrogen demand load and its bus.
+    demand_load_name = "Hydrogen demand" if "Hydrogen demand" in n.loads.index else n.loads.index[0]
+    demand_bus = n.loads.loc[demand_load_name, "bus"]
+
+    # Size relative to the actual load time series (units are whatever the H2 bus uses, typically MW_H2).
+    total_load = n.loads_t.p_set.sum(axis=1)
+    if total_load.empty:
+        return
+
+    mean_load = float(total_load.mean())
+    peak_load = float(total_load.max())
+
+    # Derive buffer size (energy) and power limits (rate) from demand.
+    e_nom = max(1e-6, mean_load * flex_hours * float(energy_fraction))
+    p_nom = max(1e-6, peak_load * float(power_fraction))
+
+    dsm_bus = f"{demand_bus}__dsm"
+    if dsm_bus not in n.buses.index:
+        # Keep carrier consistent where possible
+        carrier = ""
+        try:
+            if "carrier" in n.buses.columns and demand_bus in n.buses.index:
+                carrier = n.buses.loc[demand_bus, "carrier"]
+        except Exception:
+            carrier = ""
+        n.add("Bus", dsm_bus, carrier=carrier)
+
+    store_name = f"{name_prefix} Store"
+    link_charge = f"{name_prefix} Charge"
+    link_discharge = f"{name_prefix} Discharge"
+
+    # Avoid accidental duplication if called twice
+    if store_name in getattr(n, "stores", pd.DataFrame()).index:
+        return
+
+    n.add(
+        "Store",
+        store_name,
+        bus=dsm_bus,
+        e_nom=e_nom,
+        e_initial=0.0,
+        e_cyclic=bool(cyclic),
+        marginal_cost=0.0,
+        capital_cost=0.0,
+    )
+
+    # Power limits for charging/discharging (Store itself has no power cap in PyPSA).
+    n.add(
+        "Link",
+        link_charge,
+        bus0=demand_bus,
+        bus1=dsm_bus,
+        p_nom=p_nom,
+        efficiency=1.0,
+    )
+    n.add(
+        "Link",
+        link_discharge,
+        bus0=dsm_bus,
+        bus1=demand_bus,
+        p_nom=p_nom,
+        efficiency=1.0,
+    )
+
+    logging.info(
+        f"Added H2 demand flexibility buffer: e_nom={e_nom:.3f}, p_nom={p_nom:.3f}, flex_hours={flex_hours}"
+    )
+
+
 def _nh3_pyomo_constraints(n, snapshots):
     """Includes a series of additional constraints which make the ammonia plant work as needed:
     i) Battery sizing
@@ -345,6 +462,17 @@ if __name__ == "__main__":
             network_class.set_generators_in_network(country_series)
 
             if plant_type == "hydrogen":
+                dsm_enabled = bool(snakemake.config.get("h2_demand_flex", False))
+                dsm_hours = float(snakemake.config.get("h2_demand_flex_hours", 0) or 0)
+                if dsm_enabled and dsm_hours > 0:
+                    add_h2_demand_flexibility_storage(
+                        network_class.n,
+                        dsm_hours,
+                        power_fraction=float(snakemake.config.get("h2_demand_flex_power_fraction", 1.0) or 1.0),
+                        energy_fraction=float(snakemake.config.get("h2_demand_flex_energy_fraction", 1.0) or 1.0),
+                        cyclic=True,
+                        name_prefix="H2DemandFlex",
+                        )
                 # Solve
                 network_class.n.lopf(solver_name=solver,
                     solver_options = {'LogToConsole':0, 'OutputFlag':0},

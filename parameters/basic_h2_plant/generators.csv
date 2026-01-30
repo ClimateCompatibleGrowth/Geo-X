@@ -1,5 +1,5 @@
 name,bus,control,p_nom_extendable,p_nom,capital_cost,marginal_cost
-Wind,Power,Slack,TRUE,0,1.38E+06,0
-Solar,Power,PQ,TRUE,0,6.23E+05,0
-Hydro,Power,Slack,TRUE,0,2327920,0
+Wind,Power,Slack,TRUE,0,1.07E+06,0
+Solar,Power,PQ,TRUE,0,4.96E+05,0
+Hydro,Power,Slack,TRUE,0,2240000,0
 Geothermal,Power,Slack,TRUE,0,2.00E+08,0

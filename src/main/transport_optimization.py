@@ -64,6 +64,8 @@ def main():
     plant_interest_rate = country_params['Plant interest rate'].iloc[0]
     infrastructure_interest_rate = country_params['Infrastructure interest rate'].iloc[0]
     infrastructure_lifetime = country_params['Infrastructure lifetime (years)'].iloc[0]
+    max_power_fraction = float(snakemake.config.get("h2_demand_flex_power_fraction", 1.0))
+    print(f"Max power fraction for H2 demand flexibility set to: {max_power_fraction}")
 
     check_folder_exists("resources")
     
@@ -118,7 +120,8 @@ def main():
                                                 heat_price,
                                                 plant_interest_rate,
                                                 conversion_params_filepath,
-                                                currency
+                                                currency,
+                                                max_power_fraction
                                                 )[2]/annual_demand_quantity
                         trucking_states[i] = "None"
                     else:
@@ -128,7 +131,8 @@ def main():
                                                 heat_price,
                                                 plant_interest_rate,
                                                 conversion_params_filepath,
-                                                currency
+                                                currency,
+                                                max_power_fraction
                                                 )[2]/annual_demand_quantity
                         trucking_states[i] = "None"
                 # Leave the costs as 0 for ammonia, just change state
@@ -148,7 +152,8 @@ def main():
                                                     infrastructure_interest_rate,
                                                     conversion_params_filepath,
                                                     pipeline_params_filepath, 
-                                                    currency)[0]
+                                                    currency,
+                                                    max_power_fraction)[0]
                     elif plant_type == "ammonia":
                         pipeline_costs[i] =\
                             calculate_nh3_pipeline_costs(dist_to_demand,
@@ -197,7 +202,8 @@ def main():
                                                     infrastructure_interest_rate,
                                                     conversion_params_filepath,
                                                     transport_params_filepath,
-                                                    currency)
+                                                    currency,
+                                                    max_power_fraction)
                 elif plant_type == "ammonia":
                     trucking_costs[i] = calculate_trucking_costs(demand_state,
                                                         dist_to_demand, 

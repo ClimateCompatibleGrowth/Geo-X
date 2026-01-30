@@ -83,9 +83,9 @@ if __name__ == "__main__":
         
         # H2 Storage
         if plant_type == "hydrogen":
-            capital_cost_h2_storage = stores_parameters.loc['CompressedH2Store', 'capital_cost']
+            capital_cost_h2_storage = stores_parameters.loc['Compressed H2 Store', 'capital_cost']# rename to match csv
         else:
-            capital_cost_h2_storage = stores_parameters.loc['CompressedH2Store', 'capital_cost']
+            capital_cost_h2_storage = stores_parameters.loc['Compressed H2 Store', 'capital_cost']# rename to match csv
         hexagons[f'{demand_center} H2 storage costs'] = \
             hexagons[f'{demand_center} H2 storage capacity'] *\
                 capital_cost_h2_storage * crf_plant
