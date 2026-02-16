@@ -12,6 +12,7 @@ import math
 import numpy as np
 import pandas as pd
 import geopy
+import warnings
 
 def CRF(interest, lifetime):
     '''
@@ -50,10 +51,10 @@ def calculate_trucking_costs(transport_state, distance, quantity, interest,
         annual amount of commodity to transport.
     interest : float
         interest rate on capital investments.
-    transport_paramsh : string
-        path to transport_parameters.xlsx file.
+    transport_params : pandas DataFrame
+        contains data from transport parameters excel sheet.
     currency : string
-        type of currency that is used in the parameter files.
+        unit of currency that is used in the parameter files.
 
     Returns
     -------
@@ -145,7 +146,7 @@ def h2_conversion_stand(final_state, quantity, electricity_costs, heat_costs,
     conversion_params_filepath : string
         path to conversion parameters excel sheet.
     currency : string
-        type of currency that is used in the parameter files.
+        unit of currency that is used in the parameter files.
 
     Returns
     -------
@@ -308,10 +309,10 @@ def cheapest_trucking_strategy(final_state, quantity, distance,
         (not including roads).
     conversion_params_filepath : string
         path to conversion parameters excel sheet.
-    transport_params : string
-        path to transport parameters excel sheet. 
+    transport_params : pandas DataFrame
+        contains data from transport parameters excel sheet.
     currency : string
-        type of currency that is used in the parameter files.
+        unit of currency that is used in the parameter files.
     
     Returns
     -------
@@ -406,7 +407,7 @@ def cheapest_pipeline_strategy(final_state, quantity, distance,
     pipeline_params_filepath : string
         path to pipeline parameters excel sheet.
     currency : string
-        type of currency that is used in the parameter files.
+        unit of currency that is used in the parameter files.
     elec_cost_grid : float
         grid electricity costs that pipeline compressors pay. Default 0.0
 
@@ -451,7 +452,7 @@ def pipeline_costs(distance, quantity, elec_cost, pipeline_params_filepath,
     interest : float
         interest rate on capital investments.
     currency : string
-        type of currency that is used in the parameter files.
+        unit of currency that is used in the parameter files.
 
     Returns
     -------
@@ -528,7 +529,7 @@ def calculate_nh3_pipeline_costs(distance, quantity, elec_cost,
     interest : float
         interest rate on capital investments.
     currency : string
-        type of currency that is used in the parameter files.
+        unit of currency that is used in the parameter files.
 
     Returns
     -------
@@ -592,30 +593,33 @@ def calculate_nh3_pipeline_costs(distance, quantity, elec_cost,
 
     return cost_per_unit, f"{pipeline_type} Pipeline"
 
-def mineral_conversion_facility(quantity, interest,
-                                conversion_params):
+def calculate_conversion_facility_costs(quantity, interest, conversion_params, currency):
     """
-    Calculate the CAPEX cost and OPEX cost of a new mineral processing facility
-    as annual equivalent value (euros/kg)
+    Calculate the CAPEX cost and OPEX cost of a new copper processing facility
+    as annual equivalent value.
 
     Parameters
     ----------
-    quantity : TYPE
-        DESCRIPTION.
-    interest : TYPE
-        DESCRIPTION.
-    
+    quantity : float
+        annual quantity of ammonia demanded in kg.
+    interest : float
+        interest rate.
+    conversion_params : pandas DataFrame
+        contains data from conversion parameters excel sheet.
+    currency : string
+        unit of currency that is used in the parameter files.
+
     Returns
     -------
-    None.
-
+    capex_per_unit : float
+        cost of CAPEX (currency unit/kg/year) for new copper processing facility.
+    opex_per_unit : float
+        cost of OPEX (currency unit/kg/year) for new copper processing facility.
     """
     plant_lifetime = conversion_params.loc['Plant lifetime (a)']
-    capex_exp_coef_A = conversion_params.loc["CapEx exp coef A (euros/tonne)"]
-    capex_exp_coef_B = conversion_params.loc["CapEx exp coef B (euros/tonne)"]
-    capex_exp_coef_k = conversion_params.loc["CapEx exp coef k (1/tonne)"]
+    capex_exp_coef_B = conversion_params.loc[f"CapEx exp coef B ({currency}/tonne)"]
     
-    # Proposed exponential function as used by Baptiste in cost curve analysis
+    # Proposed exponential function as used by Imperial/Cambridge team in cost curve analysis
     # tot_capex = (capex_exp_coef_A*np.exp(-capex_exp_coef_k*(quantity/1000)) + capex_exp_coef_B) * (quantity/1000) * plant_lifetime
     
     # the cost curve analysis showed a flat relationship between cost and facility capacities greater than 20,000 tonnes
@@ -628,143 +632,179 @@ def mineral_conversion_facility(quantity, interest,
     annual_capex = tot_capex * CRF(interest, plant_lifetime)
     capex_per_unit = annual_capex / quantity
         
-    # opex cost - based on baptiste breakdown    
-    opex_df = conversion_params.loc[["Opex Labor (euros/tonne)",
-                                         "Opex Reagents (euros/tonne)",
-                                         "Opex Corporate overhead (euros/tonne)",
-                                         "Opex Other (euros/tonne)",
-                                         "Opex Royalties (euros/tonne)"]]
+    # opex cost - based on Imperial/Cambridge team breakdown    
+    opex_df = conversion_params.loc[[f"Opex Labor ({currency}/tonne)",
+                                         f"Opex Reagents ({currency}/tonne)",
+                                         f"Opex Corporate overhead ({currency}/tonne)",
+                                         f"Opex Other ({currency}/tonne)",
+                                         f"Opex Royalties ({currency}/tonne)"]]
     annual_opex = opex_df.sum() * (quantity/1000)
     opex_per_unit = annual_opex / quantity
     
     
     return capex_per_unit, opex_per_unit
 
-def calculate_construction_costs(hexagon, infrastructure_interest_rate,
-                                infrastructure_lifetime, long_capex,
-                                short_capex, short_opex, long_opex,
+def calculate_construction_costs(hexagon, interest_rate, lifetime, long_capex,
+                                short_capex, long_opex, short_opex,
                                 construction_type_dist):
+    """
+    Calculate construction costs related to the specified construction type 
+    for copper processing. Currently works for road construction only.
+
+    Parameters
+    ----------
+    hexagon : pandas Series
+        contains geospatial information regarding a hexagonally shaped area.
+    interest_rate : float
+        interest rate on infrastructure.
+    lifetime : float or integer
+        lifetime of infrastructure.
+    long_capex : float
+        CAPEX relevant for long distances (greater than 10).
+    short_capex : float
+        CAPEX relevant for short distances (between 0 and 10).
+    long_opex : float
+        OPEX relevant for long distances (greater than 10).
+    short_opex : float
+        OPEX relevant for short distances (between 0 and 10).
+    construction_type_dist : string
+        which construction type's distance is required. Currently only road.
+
+    Returns
+    -------
+    construction_costs : float
+        costs related to construction of specified construction type.
+    """
     dist = hexagon[f'{construction_type_dist}']
     if dist==0:
         construction_costs = 0.
     elif dist<10:
-        construction_costs = (dist
-                                * short_capex
-                                * CRF(infrastructure_interest_rate,
-                                        infrastructure_lifetime)
+        construction_costs = (dist * short_capex * CRF(interest_rate, lifetime)
                                 + dist * short_opex)
     else:
-        construction_costs = (dist
-                                * long_capex 
-                                * CRF(infrastructure_interest_rate,
-                                        infrastructure_lifetime)
+        construction_costs = (dist * long_capex * CRF(interest_rate, lifetime)
                                 + dist * long_opex)
     return construction_costs
     
-def geodesic_matrix(gdf1, gdf2):
-    distances = np.empty((gdf1.shape[0], gdf2.shape[0]))
-    # the use of centroid throws a UserWarning when a geographic CRS (e.g. EPSG=4326) is used.
-    # ideally you should convert to a projected crs (ideally with equal area cylindrical?) then back again.
-    for i, p1 in enumerate(gdf1.centroid):
-        for j, p2 in enumerate(gdf2.centroid):
-            distances[i,j] = geopy.distance.geodesic((p1.y, p1.x),
-                                                        (p2.y, p2.x)).km
-            print("here")
-  
-    return pd.DataFrame(distances, index=gdf1.index, columns=gdf2.index)
+def compute_geodesic_distance_matrix(gdf1, gdf2):
+    """
+    Compute a geodesic distance matrix (in km) between the centroids of two 
+    GeoDataFrames.
 
-def find_nearest_hex(idx, hex_to_X_distance):
-    hix = hex_to_X_distance.loc[:, idx].sort_values().index[0] # index of the nearest hexagon to the demand centre (contain might not work at low hexagon resolution)
-    return hix
-
-def determine_feedstock_sources(feedstock_points_gdf,
-                                hexagon_to_feedstock_distance_matrix,
-                                hix, feedstock_quantity):
-    feedstock_ranked = feedstock_points_gdf.merge(hexagon_to_feedstock_distance_matrix.loc[hix,:], left_index=True, right_index=True).sort_values(by=hix)[['Annual capacity [kg/a]']]
-    feedstock_ranked["Cumulative [kg/year]"] = feedstock_ranked.cumsum()
-    feedstock_ranked["Feedstock used [kg/year]"] = 0.0
-    remaining_quantity = feedstock_quantity
-    for f, feedstock in feedstock_ranked.iterrows():
-        if remaining_quantity <= 0:
-            break
-        feedstock_used = min(feedstock_points_gdf.loc[f, 'Annual capacity [kg/a]'], remaining_quantity)
-        feedstock_ranked.loc[f,"Feedstock used [kg/year]"] = feedstock_used
-        remaining_quantity -= feedstock_used
-        
-    
-    feedstock = feedstock_ranked.loc[:feedstock_ranked[feedstock_ranked["Cumulative [kg/year]"] >= feedstock_quantity].index[0], :]
-    return feedstock
-
-def calculate_train_costs(transport_state, distance, quantity, interest, 
-                             transport_params_filepath, currency):
-    '''
-    Estimates the annual cost of transporting resource by train.
-    Method:
-        1. 
-        2.
-    Assumptions:
-        1.
-        2.
+    Pairwise great-circle distances are calculated using 
+    `geopy.distance.geodesic` between the centroid of each geometry in `gdf1` 
+    and each in `gdf2`.
 
     Parameters
     ----------
-    distance : float
-        distance between production site and demand site.
-    quantity : float
-        annual amount of resource to transport.
-    interest : float
-        interest rate on capital investments.
-    excel_path : string
-        path to transport_parameters.xlsx file
-        
+    gdf1 : geopandas GeoDataFrame
+        First set of geometries. Distances will be computed from each geometry 
+        in this GeoDataFrame to each geometry in `gdf2`.
+    gdf2 : geopandas GeoDataFrame
+        Second set of geometries. Distances will be computed from each geometry 
+        in `gdf1` to each geometry in this GeoDataFrame.
+
     Returns
     -------
-    annual_costs : float
-        annual cost of hydrogen transport with specified method.
-    '''
-    transport_parameters = pd.read_excel(transport_params_filepath,
-                                         sheet_name = transport_state,
-                                         index_col = 'Parameter'
-                                         ).squeeze('columns')
+     : pandas DataFrame
+        Distance matrix with rows indexed by `gdf1` and columns indexed by 
+        `gdf2`.
+    """
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="Geometry is in a geographic CRS")
+        centroids1 = gdf1.centroid
+        centroids2 = gdf2.centroid
 
-    average_train_speed = transport_parameters['Average train speed (km/h)']
-    working_hours = transport_parameters['Working hours (h/day)']
-    diesel_price = transport_parameters[f'Diesel price ({currency}/L)']
-    costs_for_driver = transport_parameters[f'Costs for driver ({currency}/h)']
-    working_days = transport_parameters['Working days (per year)']
+    distances = np.empty((gdf1.shape[0], gdf2.shape[0]))
+    # The use of centroid throws a UserWarning when a geographic CRS 
+    # (e.g. EPSG=4326) is used. Ideally you should convert to a projected crs 
+    # (ideally with equal area cylindrical?) then back again.
+    for i, p1 in enumerate(centroids1):
+        for j, p2 in enumerate(centroids2):
+            distances[i,j] = geopy.distance.geodesic((p1.y, p1.x),
+                                                        (p2.y, p2.x)).km
+  
+    return pd.DataFrame(distances, index=gdf1.index, columns=gdf2.index)
 
-    spec_capex_loco = transport_parameters[f'Spec capex loco ({currency})']
-    spec_opex_loco = transport_parameters['Spec opex loco (% of capex/a)']
-    diesel_consumption = transport_parameters['Diesel consumption (L/100 km)']
-    loco_lifetime = transport_parameters['Loco lifetime (a)']
+def nearest_hexagon_to_location(location_id, hexagon_to_location_distances):
+    """
+    Find the nearest hexagon to a specified location.
 
-    spec_capex_wagon = transport_parameters[f'Spec capex wagon ({currency})']
-    spec_opex_wagon =transport_parameters['Spec opex wagon (% of capex/a)']
-    net_capacity = transport_parameters['Net capacity (kg of commodity)']
-    wagon_lifetime = transport_parameters['Wagon lifetime (a)']
-    loading_unloading_time = transport_parameters['Loading unloading time (h)']
-    max_wagons = transport_parameters['Max wagons per loco']
+    This function identifies the hexagon with the minimum distance to the
+    given location, based on a distance matrix where rows represent hexagons
+    and columns represent general locations (e.g., demand points or feedstock
+    points).
 
-    # Maximum journeys a single loco can make per year
-    max_journeys_per_loco = (working_hours * working_days) / (loading_unloading_time + (2 * distance / average_train_speed)) 
-    # Maximum quantity a single train (loco + max wagons) can transfer per year
-    max_quantity_per_train = max_journeys_per_loco * net_capacity * max_wagons 
-    # Minimum number of locos required assuming 1 loco per train
-    min_locos = np.ceil(quantity/max_quantity_per_train)
-    min_wagons_per_train = np.ceil((quantity/min_locos)/(net_capacity))  
+    Parameters
+    ----------
+    location_id : string
+        Column label in the distance matrix corresponding to the location
+        of interest.
+    hexagon_to_location_distances : pandas DataFrame
+        A distance matrix with hexagon indices as rows and location indices
+        as columns. Values represent distances between each hexagon and each
+        location.
+
+    Returns
+    -------
+    nearest_hex : integer
+        The index of the nearest hexagon to the specified location.
+    """
+    nearest_hex = hexagon_to_location_distances.loc[:, location_id].sort_values().index[0]
+    return nearest_hex
+
+def allocate_feedstock_sources(feedstock_points_gdf,
+                                hexagon_to_feedstock_distance_matrix,
+                                hex_index, 
+                                required_quantity):
+    """
+    Allocate feedstock from nearest feedstock points to meet a required 
+    quantity.
+
+    This function ranks feedstock points by distance to a specified hexagon,
+    computes cumulative capacities, and allocates feedstock up to the required
+    quantity on a closest-first basis.
+
+    Parameters
+    ----------
+    feedstock_points_gdf : geopandas GeoDataFrame
+        GeoDataFrame of feedstock points.
+    hexagon_to_feedstock_distance_matrix : pandas DataFrame
+        Distance matrix with hexagon indices as rows and feedstock point 
+        indices as columns.
+    hex_index : int
+        Row label in `hexagon_to_feedstock_distance_matrix` identifying the
+        hexagon for which feedstock is required.
+    required_quantity : float
+        Quantity of feedstock required in kg/year.
+
+    Returns
+    -------
+    feedstock : pandas DataFrame
+        Ranked feedstock points up to and including the row where cumulative 
+        allocation meets/exceeds required_quantity.
+    """
+    # Extract distances for the specified hexagon and rename column to 'distance'
+    distances = hexagon_to_feedstock_distance_matrix.loc[hex_index, :].rename("distance")
+
+    # Merge distances into feedstock points and sort by proximity
+    ranked = feedstock_points_gdf.merge(distances, 
+                                        left_index=True, 
+                                        right_index=True
+                                        ).sort_values(by="distance")
+
+    ranked["Cumulative [kg/year]"] = ranked[['Annual capacity [kg/a]']].cumsum()
+    ranked["Feedstock used [kg/year]"] = 0.0
     
-    total_train_journeys = quantity / (min_wagons_per_train * net_capacity)
+    remaining = float(required_quantity)
 
-    capex_loco = min_locos * spec_capex_loco
-    capex_wagon = min_wagons_per_train * spec_capex_wagon
-    
-    fuel_costs = ((total_train_journeys * 2 * distance) / 100) * diesel_consumption * diesel_price
-    wages = total_train_journeys * ((distance / average_train_speed) * 2 + loading_unloading_time) * costs_for_driver
-
-    annual_costs = ((capex_loco * CRF(interest, loco_lifetime) + capex_wagon * CRF(interest, wagon_lifetime))
-                    + capex_loco * spec_opex_loco 
-                    + capex_wagon * spec_opex_wagon 
-                    + fuel_costs 
-                    + wages)
-    
-    return annual_costs
+    for idx, row in ranked.iterrows():
+        if remaining <= 0:
+            break
+        available = float(row["Annual capacity [kg/a]"])
+        used = min(available, remaining)
+        ranked.at[idx,"Feedstock used [kg/year]"] = used
+        remaining -= used
+        
+    feedstock = ranked.loc[:ranked[ranked["Cumulative [kg/year]"] >= required_quantity].index[0], :]
+    return feedstock

@@ -1,2 +1,2 @@
-﻿name,bus,p_nom_extendable,state_of_charge_initial,cyclic_state_of_charge,max_hours,capital_cost
-Battery,DC_bus,TRUE,0.5,TRUE,4,1785000
+name,bus,p_nom_extendable,state_of_charge_initial,cyclic_state_of_charge,max_hours,capital_cost
+Battery,DC_bus,TRUE,0.5,TRUE,4,800000

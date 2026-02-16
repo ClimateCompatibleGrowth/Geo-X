@@ -1,3 +1,3 @@
-name,bus0,bus1,efficiency,p_nom_extendable
-Inverter,DC_bus,AC_bus,0.95,TRUE
-Rectifier,AC_bus,DC_bus,0.95,TRUE
+name,bus0,bus1,efficiency,p_nom_extendable,capital_cost
+Inverter,DC_bus,AC_bus,0.95,TRUE,42.5
+Rectifier,AC_bus,DC_bus,0.95,TRUE,42.5

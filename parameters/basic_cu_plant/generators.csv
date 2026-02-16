@@ -1,5 +1,4 @@
 name,bus,p_nom_extendable,capital_cost, carrier
-Wind,DC_bus,TRUE,1.58E+06,wind
-Solar,DC_bus,TRUE,1.47E+06,solar
-Hydro,Power,Slack,TRUE,0,2327920,0
-Geothermal,Power,Slack,TRUE,0,2.00E+07,0
+Wind,DC_bus,TRUE,1241000,wind
+Solar,DC_bus,TRUE,901000,solar
+Hydro,DC_bus,TRUE,1785000,hydro

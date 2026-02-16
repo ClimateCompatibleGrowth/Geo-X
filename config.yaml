@@ -6,22 +6,24 @@ scenario:
   plant_type: 'ammonia'
 
 # Weather data:
-# Change to a number that would be added to the 'weather_year' above and used as
-# the end weather year date. Must be an integer.
+# Change to a number that would be added to weather_year above and used as
+# the end weather year date. Must be an integer
 years_to_check: 1
 
 # Frequency of data:
 freq: '1H'
 
 # Generators:
-# Modify 'generators_dict' to hold the generators you would like to use
+# Modify generators_dict to hold the generators you would like to use. Can
+# be 'solar', 'wind', 'hydro' and 'geothermal'
 # Make sure it is in the same style as below
-generators_dict: {'solar' : [], 'wind' : [],}
+generators_dict: {'solar' : [], 'wind' : [], 'hydro' : []}
 panel: 'CSi'
 turbine: 'NREL_ReferenceTurbine_2020ATB_4MW'
 gen_capacity:
     solar: 1
     wind: 4
+    # Do not change gen_capacity for hydro or geothermal
     hydro: 1
     geothermal: 1
 
@@ -34,23 +36,29 @@ efficiency:
 solver : 'gurobi'
 
 water:
+    has_ocean_dists: False
+    # Change as necessary, if plant_type is 'hydrogen' or 'ammonia'
     has_limit: False
-    # Enter annual limit on water available for electrolysis, in 
-    # cubic meters if above is True
+    # Enter a value for annual limit on water available for electrolysis, in 
+    # cubic meters, if above is True
     annual_limit: 
 
 transport:
-    # Needed to all plant_types
+    # Needed by all plant_types
     road_construction: True
-    # Only needed for 'hydrogen' and 'ammonia' as plant_type
+    # Change as necessary, if plant_type is 'hydrogen' or 'ammonia'
     pipeline_construction: True
 
 # Make sure this matches the currency used in your parameter files
 currency: 'euros'
 
-# Only change below if 'copper' is the plant_type
-grid_construction: True
-size offgrid feedstocks: True
-community energy access: False
-# Used only if just demand center results are wanted
+# Set to True if only demand center results are wanted, all others will be set 
+# to 'null'
 restrict_hexagons: False
+
+# Change the below three parameters as necessary, if 'copper' is the plant_type
+grid_construction: True
+size_offgrid_feedstocks: False
+# Either False or Float (indicating % of hexagon offgrid population to 
+# consider, or absolute households)
+community_energy_access: False

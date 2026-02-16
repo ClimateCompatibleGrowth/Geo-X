@@ -93,7 +93,7 @@ if __name__ == "__main__":
     check_folder_exists(output_folder)
 
     for demand_center in demand_centers:
-        print(f"\nPlotting for {demand_center} begins...")
+        print(f"\nPlotting for {demand_center} begins")
 
         if plant_type == 'copper':
             system_types = ['offgrid','hybrid','grid']
@@ -107,7 +107,7 @@ if __name__ == "__main__":
                             {'label' : f'Production LC [{currency}/kg]'}, output_folder)
                     
                 if type == 'offgrid' or type == 'hybrid':
-                    # Battery capcity
+                    # Battery capacity
                     plot_and_save(crs, hexagons, f'{demand_center} {type} battery capacity (MW)', 
                                 {'label': 'Size (MW)'}, output_folder)
             
@@ -123,6 +123,16 @@ if __name__ == "__main__":
                         # Generator costs
                         plot_and_save(crs, hexagons, f'{demand_center} {type} {generator} costs',
                                     {'label': f'{currency}'}, output_folder)
+                        
+                    if type == 'hybrid':
+                        # Grid capacity
+                        plot_and_save(crs, hexagons, f'{demand_center} {type} grid capacity (MW)', 
+                                    {'label': 'Size (MW)'}, output_folder)
+                
+                        # Grid costs
+                        plot_and_save(crs, hexagons, f'{demand_center} {type} grid costs',
+                                    {'label': f'{currency}'}, output_folder)
+
 
             # Total trucking costs
             hexagons[f'{demand_center} total trucking costs ({currency}/kg/year)'] =\

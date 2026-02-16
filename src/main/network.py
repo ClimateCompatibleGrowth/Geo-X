@@ -39,13 +39,13 @@ class Network:
     """
     def __init__(self, type, generators, n=None):
         """
-        Provide an network object.
+        Provide a network object.
         """
         self.type = type
         self.generators = generators
         self.n = n
     
-    def set_network(self, demand_profile, country_series, demand_state=None, elec_kWh_per_kg=None, feedstocks_opt=False):
+    def set_network(self, demand_profile, country_series, demand_state=None, elec_kWh_per_kg=None):
         '''
         Sets up the network.
         
@@ -54,7 +54,7 @@ class Network:
         ----------
         demand_profile : pandas DataFrame
             dataframe of commodity demand in kg in frequency configured.
-        country_series: pandas Series
+        country_series : pandas Series
             interest rate and lifetime information.
         '''
         # Set standard Network, if none provided
@@ -101,10 +101,10 @@ class Network:
                                         country_series['Plant lifetime (years)'])
             # Stops pointless cycling through storage
             self.n.links.loc['HydrogenCompression', 'marginal_cost'] = 0.0001
-        elif self.type == "copper" and feedstocks_opt == False:
+        elif self.type == "copper":
             # Import the design of the Cu plant into the network
             self.n.import_from_csv_folder("parameters/basic_cu_plant")
-            
+
             # Import demand profile
             # Note: All flows are in MW or MWh, conversions for Concentrate done using 0.717 kWh per kg
             # Add the load
@@ -115,33 +115,13 @@ class Network:
                 )
     
             # Update and set capital costs
-            self.n.storage_units.loc["Battery", "capital_cost"] *= CRF(country_series['Solar interest rate'],
-                                                                  country_series['Solar lifetime (years)'])
-            self.n.links.loc["Inverter", "capital_cost"] = 50 * CRF(country_series['Plant interest rate'],
-                                                                     country_series['Plant lifetime (years)'])
-            self.n.links.loc["Rectifier", "capital_cost"] = 50 * CRF(country_series['Plant interest rate'],
-                                                                      country_series['Plant lifetime (years)'])
-        elif self.type == "copper" and feedstocks_opt == True:
-            # Import the design of the Cu plant into the network
-            self.n.import_from_csv_folder("parameters/basic_cu_plant")
-            
-            # Import demand profile
-            # Note: All flows are in MW or MWh, conversions for Concentrate done using 0.717 kWh per kg
-            # Add the load
-            self.n.add('Load',
-                f'Feedstock demand',
-                bus = 'AC_bus',
-                p_set = (demand_profile["Demand"] * elec_kWh_per_kg) / 1000,
-                )
-    
-            # Update and set capital costs
-            self.n.storage_units.loc["Battery", "capital_cost"] *= CRF(country_series['Solar interest rate'],
-                                                                  country_series['Solar lifetime (years)'])
-            self.n.links.loc["Inverter", "capital_cost"] = 50 * CRF(country_series['Plant interest rate'],
-                                                                     country_series['Plant lifetime (years)'])
-            self.n.links.loc["Rectifier", "capital_cost"] = 50 * CRF(country_series['Plant interest rate'],
-                                                                      country_series['Plant lifetime (years)'])
-                                                                        
+            self.n.storage_units.loc["Battery", "capital_cost"] *= CRF(country_series['Battery interest rate'],
+                                                                  country_series['Battery lifetime (years)'])
+            self.n.links.loc["Inverter", "capital_cost"] *= CRF(country_series['Plant interest rate'],
+                                                                country_series['Plant lifetime (years)'])
+            self.n.links.loc["Rectifier", "capital_cost"] *= CRF(country_series['Plant interest rate'],
+                                                                country_series['Plant lifetime (years)'])
+                                                                   
     def add_community_energy_demand(self, energy_access_connections, filepath):
         '''
         Adds community demand as a load.
@@ -149,17 +129,20 @@ class Network:
         ...
         Parameters
         ----------
-        
+        energy_access_connections : float
+                number of energy access connections required.
+        filepath : string
+            pathway to the community electricity access profile.
         '''
         # Community energy demand
         # Basic model assumes connected to same single AC bus as facility
         energy_access_df = pd.read_csv(filepath, index_col=0, parse_dates=True)
         energy_access_demand = energy_access_df * energy_access_connections
         self.n.add('Load',
-            'Community Demand',
-            bus = 'AC_bus',
-            p_set = energy_access_demand['MW'])
-
+                    'Community Demand',
+                    bus = 'AC_bus',
+                    p_set = energy_access_demand['MW'])
+    
     def add_grid(self, country_series, currency):
         '''
         Adds grid as a generator.
@@ -167,6 +150,11 @@ class Network:
         ...
         Parameters
         ----------
+        country_series : pandas Series
+            electricity price and grid connection cost information.
+        currency : string
+        unit of currency that is used in the parameter files.
+
         '''
         self.n.add("Generator",
                    "Grid",
@@ -182,7 +170,7 @@ class Network:
         ...
         Parameters
         ----------
-        country_series: pandas Series
+        country_series : pandas Series
             interest rate and lifetime information.
         '''
         # Send the generator data to the network

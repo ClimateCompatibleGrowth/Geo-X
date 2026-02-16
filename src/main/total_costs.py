@@ -26,12 +26,13 @@ def main():
 
     # Get lowest cost for each transport type
     for demand_center in demand_centers:
-        print(f"Calculating total costs for {demand_center} begins...\n")
+        print(f"Calculating total costs for {demand_center} begins\n")
         if plant_type == 'copper':
             # Calculating total grid LCOP
             hexagons[f'{demand_center} total grid LCOP'] = (hexagons[f'{demand_center} grid total energy cost ({currency}/kg/year)']
                                     + hexagons[f'{demand_center} annual facility costs ({currency}/kg/year)']
                                     + hexagons[f'{demand_center} trucking transport costs ({currency}/kg/year)']
+                                    + hexagons[f'{demand_center} diesel cost ({currency}/kg/year)']
                                     + hexagons[f'{demand_center} feedstock cost ({currency}/kg/year)']
                                     + hexagons[f'{demand_center} lowest water cost ({currency}/kg/year)'])
             
@@ -39,9 +40,17 @@ def main():
             hexagons[f'{demand_center} total hybrid LCOP'] = (hexagons[f'{demand_center} hybrid total energy cost ({currency}/kg/year)']
                                 + hexagons[f'{demand_center} annual facility costs ({currency}/kg/year)']
                                 + hexagons[f'{demand_center} trucking transport costs ({currency}/kg/year)']
+                                + hexagons[f'{demand_center} diesel cost ({currency}/kg/year)']
                                 + hexagons[f'{demand_center} feedstock cost ({currency}/kg/year)']
                                 + hexagons[f'{demand_center} lowest water cost ({currency}/kg/year)'])
-            offgrid_LCOPs = np.zeros(len_hexagons)
+            
+            # Calculating total offgrid LCOP
+            hexagons[f'{demand_center} total offgrid LCOP'] = (hexagons[f'{demand_center} offgrid total energy cost ({currency}/kg/year)']
+                                    + hexagons[f'{demand_center} annual facility costs ({currency}/kg/year)']
+                                    + hexagons[f'{demand_center} trucking transport costs ({currency}/kg/year)']
+                                    + hexagons[f'{demand_center} diesel cost ({currency}/kg/year)']
+                                    + hexagons[f'{demand_center} feedstock cost ({currency}/kg/year)']
+                                    + hexagons[f'{demand_center} lowest water cost ({currency}/kg/year)'])
         else:
             if plant_type == "hydrogen":
                 trucking_tranport_costs = hexagons[f'{demand_center} trucking transport and conversion costs']
@@ -56,31 +65,19 @@ def main():
                     trucking_tranport_costs +\
                         hexagons[f'{demand_center} production cost'] +\
                             hexagons['Lowest water cost']
-            # Calculating trucking total cost
+            # Calculating pipeline total cost
             hexagons[f'{demand_center} pipeline total cost'] =\
                     pipeline_transport_costs +\
                         hexagons[f'{demand_center} production cost'] +\
                             hexagons['Lowest water cost']
 
-        for i in range(len_hexagons):
-            if plant_type == 'copper':
-                # Calculating total offgrid LCOP
-                if hexagons[f'{demand_center} offgrid total energy cost ({currency}/kg/year)'][i] == np.nan:
-                    offgrid_LCOPs[i] = np.nan
-                else:
-                    offgrid_LCOPs[i] = (hexagons[f'{demand_center} offgrid total energy cost ({currency}/kg/year)'][i]
-                                            + hexagons[f'{demand_center} annual facility costs ({currency}/kg/year)'][i]
-                                            + hexagons[f'{demand_center} trucking transport costs ({currency}/kg/year)'][i]
-                                            + hexagons[f'{demand_center} feedstock cost ({currency}/kg/year)'][i]
-                                            + hexagons[f'{demand_center} lowest water cost ({currency}/kg/year)'][i])
-            else:
+            for i in range(len_hexagons):
                 # Get the lowest between the trucking and the pipeline options
-                print(f"Determining lowest cost for {i+1} of {len_hexagons}...")
+                print(f"Determining lowest cost for {i+1} of {len_hexagons}")
                 hexagons.loc[i, f'{demand_center} lowest cost'] = np.nanmin(
                                         [hexagons.loc[i, f'{demand_center} trucking total cost'],
-                                        hexagons.loc[i, f'{demand_center} pipeline total cost']])
-        if plant_type == "copper":
-            hexagons[f'{demand_center} total offgrid LCOP'] = offgrid_LCOPs
+                                    hexagons.loc[i, f'{demand_center} pipeline total cost']])
+                
     print("\nCalculations complete.\n")
     hexagons.to_file(str(snakemake.output), driver='GeoJSON', encoding='utf-8')
 
