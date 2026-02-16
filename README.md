@@ -231,9 +231,7 @@ For further details on these parameters, refer to the [PyPSA documentation](http
 > [!IMPORTANT]
 > All parameter files must be stored in a folder structure organised by **country** and **commodity**. 
 > Each commodity must be placed in a sub-folder named after the commodity, within a folder named using the corresponding **Country ISO Code**.
-
 > As currently implemented, the commodity must be one of `hydrogen`, `ammonia`, or `copper`.
-
 > For the illustrative case studies:
 > - Namibia uses the folder `NA`, with sub-folders `hydrogen` and `ammonia`
 > - Zambia uses the folder `ZM`, with the sub-folder `copper`
