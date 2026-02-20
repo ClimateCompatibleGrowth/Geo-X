@@ -267,7 +267,6 @@ if __name__ == "__main__":
     except FileNotFoundError as e:
         e.strerror = "Missing file: Weather file not found. Please run weather file rule or add weather file to cutouts folder."
         raise e
-    file = open("stats.txt", "w")
     cutout = atlite.Cutout(cutout_filepath)
     layout = cutout.uniform_layout()
     profiles = {}
@@ -537,8 +536,6 @@ if __name__ == "__main__":
                                     solver_options = {'OutputFlag': 0},
                                     pyomo=False,
                                     )
-                stat_costs = network_class.n.statistics()
-                file.write(f"{stat_costs}\n\n")
 
                 offgrid_E_costs[i] = network_class.n.objective
                 offgrid_lcoes[i] = offgrid_E_costs[i] / (network_class.n.generators_t.p.sum().sum()*1000)  # total system cost / energy produced (currency/kWh)
@@ -556,8 +553,6 @@ if __name__ == "__main__":
                                     solver_options = {'OutputFlag': 0},
                                     pyomo=False,
                                     )
-                stat_costs = network_class.n.statistics()
-                file.write(f"{stat_costs}\n\n")
                 
                 hybrid_E_costs[i] = network_class.n.objective + country_series[f"Electricity fixed charge ({currency}/year)"]
                 # Hybrid LCOE = total system cost / energy produced (currency/kWh)
@@ -694,7 +689,6 @@ if __name__ == "__main__":
                     generators_capacities[gen].append(network_class.n.generators.p_nom_opt[gen.capitalize()])
     
         print("\nOptimisation complete.\n")    
-        file.close()    
         # Updating results in hexagon file
         if plant_type == 'copper':
             # Off-grid costs
