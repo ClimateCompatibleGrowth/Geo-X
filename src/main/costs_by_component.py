@@ -172,7 +172,7 @@ if __name__ == "__main__":
                     hexagons[f'{demand_center} HB costs']/ \
                         demand_parameters.loc[demand_center, 'Annual demand [kg/a]']
                 
-                capital_cost_nh3_storage = links_parameters.loc['Ammonia', 'capital_cost']
+                capital_cost_nh3_storage = stores_parameters.loc['Ammonia', 'capital_cost']
                 hexagons[f'{demand_center} NH3 storage costs'] = \
                     hexagons[f'{demand_center} NH3 storage capacity'] *\
                         capital_cost_nh3_storage * crf_plant

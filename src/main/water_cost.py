@@ -121,7 +121,7 @@ def main():
             
             h2o_costs_dom_water_bodies[i] =(water_spec_cost 
                                                 + (water_transport_cost/100)
-                                                * np.namin(waterbody_dist, waterway_dist) 
+                                                * min(waterbody_dist, waterway_dist) 
                                                 + electricity_demand_h2o_treatment
                                                 * elec_price
                                             ) * water_demand/1000
