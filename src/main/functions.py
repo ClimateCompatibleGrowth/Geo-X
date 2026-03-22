@@ -3,6 +3,7 @@
  - Claire Halloran
  - Samiyha Naqvi, University of Oxford, samiyha.naqvi@eng.ox.ac.uk
  - Alycia Leonard, University of Oxford, alycia.leonard@eng.ox.ac.uk
+ - Mulako Mukelabai, University of Oxford, mulako.mukelabai@eng.ox.ac.uk
 
 This script contains functions needed by the following files:
  - transport_optimization.py
@@ -13,6 +14,9 @@ import numpy as np
 import pandas as pd
 import geopy
 import warnings
+
+ELECTROLYSER_STACK_REPLACEMENT_ENABLED = True
+ELECTROLYSER_STACK_METADATA_NAME = "ElectrolyserStackReplacementMeta"
 
 def CRF(interest, lifetime):
     '''
@@ -33,6 +37,98 @@ def CRF(interest, lifetime):
     CRF = (((1 + interest)**lifetime) * interest)/(((1 + interest)**lifetime) - 1)
     
     return CRF
+
+def annualise_capex_with_replacements(capex0, interest, horizon_years, asset_lifetime_years):
+    """
+    Annualise capex over a plant horizon with repeated full replacements.
+
+    Parameters
+    ----------
+    capex0 : float
+        Initial capex at year 0.
+    interest : float
+        Discount rate.
+    horizon_years : float or integer
+        Analysis horizon (plant lifetime), years.
+    asset_lifetime_years : float or integer
+        Asset lifetime, years.
+
+    Returns
+    -------
+    float
+        Annualized cost that includes the discounted present value of the
+        initial investment and any full-capex replacements within the horizon.
+    """
+    if horizon_years <= 0 or asset_lifetime_years <= 0:
+        raise ValueError("issue=9 file=src/main/functions.py context=annualise_capex_with_replacements missing=positive_horizon_or_lifetime")
+
+    n_replacements = math.floor((horizon_years - 1) / asset_lifetime_years)
+    pv_factor = sum(
+        1 / ((1 + interest) ** (k * asset_lifetime_years))
+        for k in range(n_replacements + 1)
+    )
+
+    return capex0 * pv_factor * CRF(interest, horizon_years)
+
+
+def annualise_capex_with_hourly_replacements(
+    capex0,
+    interest,
+    horizon_years,
+    annual_operating_hours,
+    stack_lifetime_hours,
+    replacement_fraction,
+):
+    """
+    Annualise capex over a plant horizon with operating-hour-triggered replacements.
+
+    Parameters
+    ----------
+    capex0 : float
+        Initial capex at year 0.
+    interest : float
+        Discount rate.
+    horizon_years : float or integer
+        Analysis horizon (plant lifetime), years.
+    annual_operating_hours : float
+        Weighted operating hours per year for the asset.
+    stack_lifetime_hours : float
+        Stack lifetime before replacement is required, hours.
+    replacement_fraction : float
+        Replacement cost as a fraction of the initial capex.
+
+    Returns
+    -------
+    float
+        Equivalent annual cost including the discounted initial investment and
+        operating-hour-triggered stack replacements over the analysis horizon.
+    """
+    if horizon_years <= 0:
+        raise ValueError(
+            "issue=10 file=src/main/functions.py context=annualise_capex_with_hourly_replacements missing=positive_horizon"
+        )
+    if stack_lifetime_hours <= 0:
+        raise ValueError(
+            "issue=10 file=src/main/functions.py context=annualise_capex_with_hourly_replacements missing=positive_stack_lifetime_hours"
+        )
+    if replacement_fraction < 0:
+        raise ValueError(
+            "issue=10 file=src/main/functions.py context=annualise_capex_with_hourly_replacements missing=non_negative_replacement_fraction"
+        )
+
+    present_value = capex0
+    if annual_operating_hours > 0 and replacement_fraction > 0:
+        replacement_interval_years = stack_lifetime_hours / annual_operating_hours
+        replacement_time = replacement_interval_years
+        while replacement_time < horizon_years:
+            present_value += (
+                capex0
+                * replacement_fraction
+                / ((1 + interest) ** replacement_time)
+            )
+            replacement_time += replacement_interval_years
+
+    return present_value * CRF(interest, horizon_years)
 
 
 def calculate_trucking_costs(transport_state, distance, quantity, interest, 
