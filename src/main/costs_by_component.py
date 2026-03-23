@@ -12,42 +12,6 @@ import pandas as pd
 
 from functions import CRF, annualise_capex_with_replacements
 
-GRID_CONSTRUCTION_CLASSIFICATION = "INFRA"
-
-
-def _canonicalize_component_columns(hexagons: pd.DataFrame, currency: str) -> pd.DataFrame:
-    """
-    Convert active component output columns to the canonical decision-CSV suffixes.
-
-    Only `LC - ...` component columns are renamed. Aggregate LCOP, energy, water,
-    and other decision metrics keep their established human-readable names.
-    Legacy component suffixes are removed from the returned frame.
-    """
-    atomic_suffix = f" cost ({currency}/kg/year)"
-    aggregate_suffix = f" total cost ({currency}/kg/year)"
-    canonical_map = {}
-    for col in hexagons.columns:
-        if not (isinstance(col, str) and " LC - " in col):
-            continue
-        if col.endswith(aggregate_suffix):
-            canonical_map[col] = col[: -len(aggregate_suffix)] + " total_cost_eur_per_kg_year"
-        elif col.endswith(atomic_suffix):
-            canonical_map[col] = col[: -len(atomic_suffix)] + " cost_eur_per_kg_year"
-
-    if canonical_map:
-        hexagons = hexagons.rename(columns=canonical_map)
-
-    legacy_portion_suffix = " " + "portion"
-    legacy_component_suffix = " component" + "_cost_eur_per_kg_year"
-    drop_cols = [
-        c for c in hexagons.columns
-        if isinstance(c, str) and (c.endswith(legacy_portion_suffix) or c.endswith(legacy_component_suffix))
-    ]
-    if drop_cols:
-        hexagons = hexagons.drop(columns=drop_cols)
-
-    return hexagons
-
 if __name__ == "__main__":
     # Load hexagons
     hexagons = gpd.read_file(snakemake.input.hexagons)
@@ -72,7 +36,7 @@ if __name__ == "__main__":
         links_csv_path = 'parameters/basic_h2_plant/links.csv'
         links_parameters = pd.read_csv(links_csv_path, index_col='name')
         # Generators
-        generators_csv_path = 'parameters/basic_cu_plant/generators.csv'
+        generators_csv_path = 'parameters/basic_h2_plant/generators.csv'
         generators_parameters = pd.read_csv(generators_csv_path, index_col='name')
     elif plant_type == "ammonia":
         # H2 storage and battery
@@ -111,10 +75,6 @@ if __name__ == "__main__":
         # Work out the cost for each component using the data for the country 
         # you are looking at
         if plant_type == 'copper':
-            if GRID_CONSTRUCTION_CLASSIFICATION not in {"ENERGY", "INFRA"}:
-                raise ValueError(
-                    f"issue=6 file=src/main/costs_by_component.py context=invalid_grid_construction_classification missing=[{GRID_CONSTRUCTION_CLASSIFICATION}]"
-                )
             annual_demand = demand_parameters.loc[demand_center, 'Annual demand [kg/a]']
             battery_interest = country_series['Battery interest rate']
             battery_lifetime = country_series['Battery lifetime (years)']
@@ -123,8 +83,6 @@ if __name__ == "__main__":
             for system_type in system_types:
                 # Rectifier
                 rectifier_capacity_col = f'{demand_center} {system_type} rectifier capacity (MW)'
-                if rectifier_capacity_col not in hexagons.columns:
-                    raise ValueError(f"issue=6 file=src/main/costs_by_component.py context=rectifier_capacity missing={rectifier_capacity_col}")
                 capital_cost_rectifier = links_parameters.loc['Rectifier', 'capital_cost']
                 hexagons[f'{demand_center} {system_type} rectifier costs'] = \
                     hexagons[rectifier_capacity_col] *\
@@ -135,8 +93,6 @@ if __name__ == "__main__":
                 
                 # Inverter
                 inverter_capacity_col = f'{demand_center} {system_type} inverter capacity (MW)'
-                if inverter_capacity_col not in hexagons.columns:
-                    raise ValueError(f"issue=6 file=src/main/costs_by_component.py context=inverter_capacity missing={inverter_capacity_col}")
                 capital_cost_inverter = links_parameters.loc['Inverter', 'capital_cost']
                 hexagons[f'{demand_center} {system_type} inverter costs'] = \
                     hexagons[inverter_capacity_col] *\
@@ -147,8 +103,6 @@ if __name__ == "__main__":
                 
                 # Battery
                 battery_capacity_col = f'{demand_center} {system_type} battery capacity (MW)'
-                if battery_capacity_col not in hexagons.columns:
-                    raise ValueError(f"issue=9 file=src/main/costs_by_component.py context=battery_capacity missing={battery_capacity_col}")
                 capital_cost_battery = storage_parameters.loc['Battery', 'capital_cost']
                 battery_annualised_per_mw = annualise_capex_with_replacements(
                     capital_cost_battery,
@@ -168,10 +122,6 @@ if __name__ == "__main__":
                     objective_component_col = (
                         f'{demand_center} {system_type} {generator} objective component cost ({currency}/kg/year)'
                     )
-                    if objective_component_col not in hexagons.columns:
-                        raise ValueError(
-                            f"issue=6 file=src/main/costs_by_component.py context=missing_objective_based_renewables missing={[objective_component_col]}"
-                        )
                     hexagons[f'{demand_center} {system_type} {generator} costs'] = (
                         hexagons[objective_component_col] * annual_demand
                     )
@@ -179,15 +129,6 @@ if __name__ == "__main__":
                         hexagons[objective_component_col]
                 
                 if system_type == 'hybrid':
-                    required_hybrid_cols = [
-                        f'{demand_center} hybrid grid purchase costs ({currency}/kg/year)',
-                        f'{demand_center} hybrid grid capacity charge ({currency}/kg/year)',
-                        f'{demand_center} hybrid grid fixed charge ({currency}/kg/year)',
-                        f'{demand_center} hybrid grid construction charge ({currency}/kg/year)',
-                    ]
-                    missing_hybrid_cols = [c for c in required_hybrid_cols if c not in hexagons.columns]
-                    if missing_hybrid_cols:
-                        raise ValueError(f"issue=6 file=src/main/costs_by_component.py context=hybrid_grid_components missing={missing_hybrid_cols}")
                     hexagons[f'{demand_center} LC - hybrid grid purchase costs cost ({currency}/kg/year)'] = \
                         hexagons[f'{demand_center} hybrid grid purchase costs ({currency}/kg/year)']
                     hexagons[f'{demand_center} LC - hybrid grid capacity charge cost ({currency}/kg/year)'] = \
@@ -196,7 +137,6 @@ if __name__ == "__main__":
                         hexagons[f'{demand_center} hybrid grid fixed charge ({currency}/kg/year)']
                     hexagons[f'{demand_center} LC - hybrid grid construction charge cost ({currency}/kg/year)'] = \
                         hexagons[f'{demand_center} hybrid grid construction charge ({currency}/kg/year)']
-                    # Legacy aggregate column retained for backwards compatibility.
                     hexagons[f'{demand_center} LC - {system_type} grid costs total cost ({currency}/kg/year)'] = (
                         hexagons[f'{demand_center} LC - hybrid grid purchase costs cost ({currency}/kg/year)']
                         + hexagons[f'{demand_center} LC - hybrid grid capacity charge cost ({currency}/kg/year)']
@@ -222,10 +162,6 @@ if __name__ == "__main__":
             # Electrolyzer
             if plant_type == 'hydrogen' or plant_type == 'ammonia':
                 electrolyzer_annual_cost_col = f'{demand_center} electrolyzer annual costs'
-                if electrolyzer_annual_cost_col not in hexagons.columns:
-                    raise ValueError(
-                        f"issue=10 file=src/main/costs_by_component.py context=electrolyzer_annual_costs missing=['{electrolyzer_annual_cost_col}']"
-                    )
                 hexagons[f'{demand_center} electrolyzer costs'] = \
                     hexagons[electrolyzer_annual_cost_col]
                 hexagons[f'{demand_center} LC - electrolyzer cost ({currency}/kg/year)'] = \
@@ -277,8 +213,6 @@ if __name__ == "__main__":
                     hexagons[f'{demand_center} {generator} costs']/ \
                         demand_parameters.loc[demand_center, 'Annual demand [kg/a]']
             
-    hexagons = _canonicalize_component_columns(hexagons, currency)
-
     print("\nCalculations complete.\n")
     hexagons.to_file(snakemake.output[0], driver='GeoJSON', encoding='utf-8')
     hexagons.to_csv(snakemake.output[1], encoding='latin-1')

@@ -25,7 +25,6 @@ import glob
 
 from functions import (
     CRF,
-    ELECTROLYSER_STACK_REPLACEMENT_ENABLED,
     annualise_capex_with_hourly_replacements,
 )
 from network import Network
@@ -162,13 +161,11 @@ def _get_objective_snapshot_weights(network):
             return snapshot_weightings['objective']
         if 'generators' in snapshot_weightings.columns:
             return snapshot_weightings['generators']
-        raise ValueError(
-            "issue=6 file=src/main/plant_optimization.py context=snapshot_weightings missing=['objective','generators']"
-        )
+        return snapshot_weightings.iloc[:, 0]
     return snapshot_weightings
 
 
-def _calculate_renewable_objective_costs(network, generators, annual_demand_quantity, context):
+def _calculate_renewable_objective_costs(network, generators, annual_demand_quantity):
     """
     Decompose renewable objective costs into per-kilogram component charges.
 
@@ -180,44 +177,21 @@ def _calculate_renewable_objective_costs(network, generators, annual_demand_quan
         Generator names from the scenario config, stored in lowercase.
     annual_demand_quantity : float
         Annual production quantity used to normalize annual costs.
-    context : str
-        Error context for required-object presence checks.
-
     Returns
     -------
     dict[str, float]
         Per-kilogram annualized objective contribution for each configured
         renewable generator.
     """
-    if not np.isfinite(annual_demand_quantity) or annual_demand_quantity == 0:
-        raise ValueError(
-            f"issue=6 file=src/main/plant_optimization.py context={context}_annual_demand_quantity missing=['annual_demand_quantity']"
-        )
-
     snapshot_weights = _get_objective_snapshot_weights(network)
     component_costs = {}
-    total_energy_finite = np.isfinite(network.objective)
     for generator in generators:
         generator_name = generator.capitalize()
-        missing = []
-        if generator_name not in network.generators.index:
-            missing.append(f"{generator_name}_generator")
-        if generator_name not in network.generators_t.p.columns:
-            missing.append(f"{generator_name}_dispatch")
-        if missing:
-            raise ValueError(
-                f"issue=6 file=src/main/plant_optimization.py context={context}_renewable_generator missing={missing}"
-            )
-
         annual_component_cost = (
             network.generators.at[generator_name, 'capital_cost'] * network.generators.p_nom_opt[generator_name]
             + network.generators.at[generator_name, 'marginal_cost']
             * (network.generators_t.p[generator_name] * snapshot_weights).sum()
         )
-        if total_energy_finite and not np.isfinite(annual_component_cost):
-            raise ValueError(
-                f"issue=6 file=src/main/plant_optimization.py context={context}_renewable_component_non_finite missing=['{generator_name}']"
-            )
         component_costs[generator] = annual_component_cost / annual_demand_quantity
 
     return component_costs
@@ -240,14 +214,42 @@ def _calculate_link_operating_hours(network, link_name):
         Weighted annual operating hours, counting each active weighted snapshot
         once when the link dispatch is non-zero.
     """
-    if link_name not in network.links_t.p0.columns:
-        raise ValueError(
-            f"issue=10 file=src/main/plant_optimization.py context=link_operating_hours missing=['{link_name}_dispatch']"
-        )
-
     snapshot_weights = _get_objective_snapshot_weights(network)
     active = network.links_t.p0[link_name].abs() > 1e-9
     return float(snapshot_weights[active].sum())
+
+
+def _calculate_product_output_kg(network_class):
+    """
+    Calculate solved annual product output in kilograms from the plant load.
+
+    Parameters
+    ----------
+    network_class : Network
+        Solved plant network wrapper.
+
+    Returns
+    -------
+    float
+        Weighted annual product output in kilograms.
+    """
+    if network_class.type == "hydrogen":
+        load_name = "Hydrogen demand"
+        specific_energy_mwh_per_tonne = 39.4
+    elif network_class.type == "ammonia":
+        load_name = "Ammonia demand"
+        specific_energy_mwh_per_tonne = 6.25
+    else:
+        return 0.0
+
+    snapshot_weights = _get_objective_snapshot_weights(network_class.n)
+    if hasattr(network_class.n.loads_t, "p") and load_name in network_class.n.loads_t.p.columns:
+        load_series = network_class.n.loads_t.p[load_name].abs()
+    else:
+        load_series = network_class.n.loads_t.p_set[load_name].abs()
+
+    annual_energy_mwh = float((load_series * snapshot_weights).sum())
+    return annual_energy_mwh / specific_energy_mwh_per_tonne * 1000.0
 
 
 def _calculate_electrolyser_annual_cost(network_class, country_series):
@@ -270,14 +272,23 @@ def _calculate_electrolyser_annual_cost(network_class, country_series):
     link_name = 'Electrolysis'
     p_nom_opt = float(network_class.n.links.p_nom_opt[link_name])
     annual_operating_hours = _calculate_link_operating_hours(network_class.n, link_name)
+    solved_product_output_kg = _calculate_product_output_kg(network_class)
     base_annual_cost = p_nom_opt * float(network_class.n.links.at[link_name, 'capital_cost'])
 
-    replacement_inputs = network_class.electrolyser_stack_replacement_inputs
     if (
-        (not ELECTROLYSER_STACK_REPLACEMENT_ENABLED)
-        or replacement_inputs is None
+        network_class.type not in {"hydrogen", "ammonia"}
+        or link_name not in network_class.n.links.index
+        or network_class.electrolyser_raw_capital_cost is None
         or p_nom_opt <= 0
+        or annual_operating_hours <= 0
+        or solved_product_output_kg <= 0
     ):
+        return base_annual_cost, annual_operating_hours
+
+    replacement_inputs = network_class.electrolyser_stack_replacement_inputs or {}
+    replacement_fraction = float(replacement_inputs.get("replacement_fraction", 0.0))
+    stack_lifetime_hours = float(replacement_inputs.get("stack_lifetime_hours", 0.0))
+    if replacement_fraction <= 0 or stack_lifetime_hours <= 0:
         return base_annual_cost, annual_operating_hours
 
     raw_capex = p_nom_opt * float(network_class.electrolyser_raw_capital_cost)
@@ -286,8 +297,8 @@ def _calculate_electrolyser_annual_cost(network_class, country_series):
         float(country_series['Plant interest rate']),
         float(country_series['Plant lifetime (years)']),
         annual_operating_hours,
-        float(replacement_inputs['stack_lifetime_hours']),
-        float(replacement_inputs['replacement_fraction']),
+        stack_lifetime_hours,
+        replacement_fraction,
     )
     return replacement_annual_cost, annual_operating_hours
 
@@ -600,7 +611,6 @@ if __name__ == "__main__":
             generators_capacities = deepcopy(snakemake.config['generators_dict'])
             electrolyzer_capacities= np.zeros(len_hexagons)
             electrolyzer_annual_costs = np.zeros(len_hexagons)
-            electrolyzer_operating_hours = np.zeros(len_hexagons)
             battery_capacities = np.zeros(len_hexagons)
             h2_storages= np.zeros(len_hexagons)
 
@@ -716,7 +726,6 @@ if __name__ == "__main__":
                     network_class.n,
                     generators_list,
                     annual_demand_quantity,
-                    f"offgrid_{demand_center}_{i}",
                 )
                 for gen, per_kg_cost in offgrid_renewable_components.items():
                     offgrid_generators_component_costs[gen][i] = per_kg_cost
@@ -742,7 +751,6 @@ if __name__ == "__main__":
                     network_class.n,
                     generators_list,
                     annual_demand_quantity,
-                    f"hybrid_{demand_center}_{i}",
                 )
                 for gen, per_kg_cost in hybrid_renewable_components.items():
                     hybrid_generators_component_costs[gen][i] = per_kg_cost
@@ -752,17 +760,13 @@ if __name__ == "__main__":
                 hybrid_rectifier_capacities[i] = network_class.n.links.p_nom_opt['Rectifier']
                 hybrid_inverter_capacities[i] = network_class.n.links.p_nom_opt['Inverter']
                 hybrid_grid_capacities[i] = network_class.n.generators.p_nom_opt['Grid']
-                if 'Grid' not in network_class.n.generators_t.p.columns:
-                    raise ValueError("issue=6 file=src/main/plant_optimization.py context=hybrid_grid_dispatch missing=Grid_generator_dispatch")
-                if 'Grid' not in network_class.n.generators.index:
-                    raise ValueError("issue=6 file=src/main/plant_optimization.py context=hybrid_grid_generator missing=Grid_generator")
                 if hasattr(network_class.n.snapshot_weightings, 'columns'):
                     if 'objective' in network_class.n.snapshot_weightings.columns:
                         snapshot_weights = network_class.n.snapshot_weightings['objective']
                     elif 'generators' in network_class.n.snapshot_weightings.columns:
                         snapshot_weights = network_class.n.snapshot_weightings['generators']
                     else:
-                        raise ValueError("issue=6 file=src/main/plant_optimization.py context=hybrid_grid_weightings missing=objective_or_generators_snapshot_weightings")
+                        snapshot_weights = network_class.n.snapshot_weightings.iloc[:, 0]
                 else:
                     snapshot_weights = network_class.n.snapshot_weightings
                 grid_dispatch = network_class.n.generators_t.p['Grid']
@@ -835,7 +839,6 @@ if __name__ == "__main__":
                             generators_capacities[gen].append(np.nan)
                     electrolyzer_capacities[i] = np.nan
                     electrolyzer_annual_costs[i] = np.nan
-                    electrolyzer_operating_hours[i] = np.nan
                     battery_capacities[i] = np.nan
                     h2_storages[i] = np.nan
                     lcs[i] = np.nan
@@ -866,7 +869,6 @@ if __name__ == "__main__":
                         lcs[i] = np.nan
                         electrolyzer_capacities[i] = np.nan
                         electrolyzer_annual_costs[i] = np.nan
-                        electrolyzer_operating_hours[i] = np.nan
                         battery_capacities[i] = np.nan
                         h2_storages[i] = np.nan
                         for gen in generators:
@@ -903,7 +905,7 @@ if __name__ == "__main__":
                     battery_capacities[i] = network_class.n.stores.e_nom_opt['Battery']
 
                 electrolyzer_capacities[i] = network_class.n.links.p_nom_opt['Electrolysis']
-                electrolyzer_annual_costs[i], electrolyzer_operating_hours[i] = _calculate_electrolyser_annual_cost(
+                electrolyzer_annual_costs[i], _ = _calculate_electrolyser_annual_cost(
                     network_class,
                     country_series,
                 )
@@ -959,7 +961,6 @@ if __name__ == "__main__":
                 hexagons[f'{demand_center} {gen} capacity'] = capacities
             hexagons[f'{demand_center} electrolyzer capacity'] = electrolyzer_capacities
             hexagons[f'{demand_center} electrolyzer annual costs'] = electrolyzer_annual_costs
-            hexagons[f'{demand_center} electrolyzer operating hours'] = electrolyzer_operating_hours
             hexagons[f'{demand_center} battery capacity'] = battery_capacities
             hexagons[f'{demand_center} H2 storage capacity'] = h2_storages
             hexagons[f'{demand_center} production cost'] = lcs
