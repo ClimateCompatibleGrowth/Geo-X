@@ -1,6 +1,6 @@
 """
 @authors:
- - Samiyha Naqvi, University of Oxford, samiyha.naqvi@eng.ox.ac.uk
+ - Samiyha Naqvi
 
 This script contains functions needed by the following files:
  - transport_optimization.py

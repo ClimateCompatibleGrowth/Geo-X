@@ -1,0 +1,4 @@
+name,bus,p_nom_extendable,capital_cost, carrier
+Wind,DC_bus,TRUE,1241000,wind
+Solar,DC_bus,TRUE,901000,solar
+Hydro,DC_bus,TRUE,1785000,hydro

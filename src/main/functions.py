@@ -1,8 +1,9 @@
 """
 @authors: 
  - Claire Halloran
- - Samiyha Naqvi, University of Oxford, samiyha.naqvi@eng.ox.ac.uk
+ - Samiyha Naqvi
  - Alycia Leonard, University of Oxford, alycia.leonard@eng.ox.ac.uk
+ - Mulako Mukelabai, University of Oxford, mulako.mukelabai@eng.ox.ac.uk
 
 This script contains functions needed by the following files:
  - transport_optimization.py
@@ -11,6 +12,10 @@ This script contains functions needed by the following files:
 import math
 import numpy as np
 import pandas as pd
+import geopy
+import warnings
+
+ELECTROLYSER_STACK_METADATA_NAME = "ElectrolyserStackReplacementMeta"
 
 def CRF(interest, lifetime):
     '''
@@ -28,16 +33,89 @@ def CRF(interest, lifetime):
     CRF : float
         present value factor.
     '''
-    interest = float(interest)
-    lifetime = float(lifetime)
-
     CRF = (((1 + interest)**lifetime) * interest)/(((1 + interest)**lifetime) - 1)
     
     return CRF
 
+def annualise_capex_with_replacements(capex0, interest, horizon_years, asset_lifetime_years):
+    """
+    Annualise capex over a plant horizon with repeated full replacements.
+
+    Parameters
+    ----------
+    capex0 : float
+        Initial capex at year 0.
+    interest : float
+        Discount rate.
+    horizon_years : float or integer
+        Analysis horizon (plant lifetime), years.
+    asset_lifetime_years : float or integer
+        Asset lifetime, years.
+
+    Returns
+    -------
+    float
+        Annualized cost that includes the discounted present value of the
+        initial investment and any full-capex replacements within the horizon.
+    """
+    n_replacements = math.floor((horizon_years - 1) / asset_lifetime_years)
+    pv_factor = sum(
+        1 / ((1 + interest) ** (k * asset_lifetime_years))
+        for k in range(n_replacements + 1)
+    )
+
+    return capex0 * pv_factor * CRF(interest, horizon_years)
+
+
+def annualise_capex_with_hourly_replacements(
+    capex0,
+    interest,
+    horizon_years,
+    annual_operating_hours,
+    stack_lifetime_hours,
+    replacement_fraction,
+):
+    """
+    Annualise capex over a plant horizon with operating-hour-triggered replacements.
+
+    Parameters
+    ----------
+    capex0 : float
+        Initial capex at year 0.
+    interest : float
+        Discount rate.
+    horizon_years : float or integer
+        Analysis horizon (plant lifetime), years.
+    annual_operating_hours : float
+        Weighted operating hours per year for the asset.
+    stack_lifetime_hours : float
+        Stack lifetime before replacement is required, hours.
+    replacement_fraction : float
+        Replacement cost as a fraction of the initial capex.
+
+    Returns
+    -------
+    float
+        Equivalent annual cost including the discounted initial investment and
+        operating-hour-triggered stack replacements over the analysis horizon.
+    """
+    present_value = capex0
+    if annual_operating_hours > 0 and replacement_fraction > 0:
+        replacement_interval_years = stack_lifetime_hours / annual_operating_hours
+        replacement_time = replacement_interval_years
+        while replacement_time < horizon_years:
+            present_value += (
+                capex0
+                * replacement_fraction
+                / ((1 + interest) ** replacement_time)
+            )
+            replacement_time += replacement_interval_years
+
+    return present_value * CRF(interest, horizon_years)
+
 
 def calculate_trucking_costs(transport_state, distance, quantity, interest, 
-                             transport_params_filepath, currency):
+                             transport_params, currency):
     '''
     Calculates the annual cost of transporting the commodity by truck.
 
@@ -52,10 +130,10 @@ def calculate_trucking_costs(transport_state, distance, quantity, interest,
         annual amount of commodity to transport.
     interest : float
         interest rate on capital investments.
-    transport_params_filepath : string
-        path to transport_parameters.xlsx file.
+    transport_params : pandas DataFrame
+        contains data from transport parameters excel sheet.
     currency : string
-        type of currency that is used in the parameter files.
+        unit of currency that is used in the parameter files.
 
     Returns
     -------
@@ -63,11 +141,6 @@ def calculate_trucking_costs(transport_state, distance, quantity, interest,
         annual cost of commodity transport with specified method.
     '''
     daily_quantity = quantity/365
-
-    transport_params = pd.read_excel(transport_params_filepath,
-                                         sheet_name = transport_state,
-                                         index_col = 'Parameter'
-                                         ).squeeze('columns')
 
     average_truck_speed = transport_params['Average truck speed (km/h)']
     working_hours = transport_params['Working hours (h/day)']
@@ -152,7 +225,7 @@ def h2_conversion_stand(final_state, quantity, electricity_costs, heat_costs,
     conversion_params_filepath : string
         path to conversion parameters excel sheet.
     currency : string
-        type of currency that is used in the parameter files.
+        unit of currency that is used in the parameter files.
 
     Returns
     -------
@@ -294,7 +367,7 @@ def h2_conversion_stand(final_state, quantity, electricity_costs, heat_costs,
 def cheapest_trucking_strategy(final_state, quantity, distance, 
                                 elec_costs, heat_costs, interest,
                                 conversion_params_filepath,
-                                transport_params_filepath, currency):
+                                transport_params, currency):
     '''
     Calculates the lowest-cost state to transport hydrogen by truck.
 
@@ -315,10 +388,10 @@ def cheapest_trucking_strategy(final_state, quantity, distance,
         (not including roads).
     conversion_params_filepath : string
         path to conversion parameters excel sheet.
-    transport_params_filepath : string
-        path to transport parameters excel sheet. 
+    transport_params : pandas DataFrame
+        contains data from transport parameters excel sheet.
     currency : string
-        type of currency that is used in the parameter files.
+        unit of currency that is used in the parameter files.
     
     Returns
     -------
@@ -329,42 +402,42 @@ def cheapest_trucking_strategy(final_state, quantity, distance,
     '''
     if final_state == '500 bar':
         dist_costs_500bar = h2_conversion_stand('500 bar', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('500 bar', distance, quantity, interest, transport_params_filepath, currency)
+                calculate_trucking_costs('500 bar', distance, quantity, interest, transport_params, currency)
     elif final_state == 'NH3':
         dist_costs_500bar = h2_conversion_stand('500 bar', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('500 bar',distance,quantity,interest,transport_params_filepath, currency) +\
+                calculate_trucking_costs('500 bar',distance,quantity,interest,transport_params, currency) +\
                     h2_conversion_stand(final_state+'_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
     else:  
         dist_costs_500bar = h2_conversion_stand('500 bar', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('500 bar',distance,quantity,interest,transport_params_filepath, currency) +\
+                calculate_trucking_costs('500 bar',distance,quantity,interest,transport_params, currency) +\
                     h2_conversion_stand(final_state, quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
     
     if final_state == 'LH2':
         dist_costs_lh2 = h2_conversion_stand('LH2', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('LH2',distance, quantity,interest,transport_params_filepath, currency)
+                calculate_trucking_costs('LH2',distance, quantity,interest,transport_params, currency)
     elif final_state == 'NH3':
         dist_costs_lh2 = h2_conversion_stand('LH2', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('LH2',distance,quantity,interest,transport_params_filepath, currency) +\
+                calculate_trucking_costs('LH2',distance,quantity,interest,transport_params, currency) +\
                     h2_conversion_stand(final_state+'_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
     else:
         dist_costs_lh2 = h2_conversion_stand('LH2', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('LH2',distance, quantity,interest,transport_params_filepath, currency) +\
+                calculate_trucking_costs('LH2',distance, quantity,interest,transport_params, currency) +\
                     h2_conversion_stand(final_state, quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
     
     if final_state == 'NH3':
         dist_costs_nh3 = h2_conversion_stand('NH3_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('NH3',distance, quantity, interest,transport_params_filepath, currency)
+                calculate_trucking_costs('NH3',distance, quantity, interest,transport_params, currency)
         dist_costs_lohc = h2_conversion_stand('LOHC_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('LOHC',distance, quantity, interest,transport_params_filepath, currency) +\
+                calculate_trucking_costs('LOHC',distance, quantity, interest,transport_params, currency) +\
                     h2_conversion_stand('LOHC_unload', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
                         h2_conversion_stand('NH3_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
     else:
         dist_costs_nh3 = h2_conversion_stand('NH3_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('NH3',distance, quantity,interest,transport_params_filepath, currency) +\
+                calculate_trucking_costs('NH3',distance, quantity,interest,transport_params, currency) +\
                     h2_conversion_stand('NH3_unload', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
                         h2_conversion_stand(final_state, quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
         dist_costs_lohc = h2_conversion_stand('LOHC_load', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
-                calculate_trucking_costs('LOHC',distance, quantity,interest,transport_params_filepath, currency) +\
+                calculate_trucking_costs('LOHC',distance, quantity,interest,transport_params, currency) +\
                     h2_conversion_stand('LOHC_unload', quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2] +\
                         h2_conversion_stand(final_state, quantity, elec_costs, heat_costs, interest, conversion_params_filepath, currency)[2]
 
@@ -413,7 +486,7 @@ def cheapest_pipeline_strategy(final_state, quantity, distance,
     pipeline_params_filepath : string
         path to pipeline parameters excel sheet.
     currency : string
-        type of currency that is used in the parameter files.
+        unit of currency that is used in the parameter files.
     elec_cost_grid : float
         grid electricity costs that pipeline compressors pay. Default 0.0
 
@@ -458,7 +531,7 @@ def pipeline_costs(distance, quantity, elec_cost, pipeline_params_filepath,
     interest : float
         interest rate on capital investments.
     currency : string
-        type of currency that is used in the parameter files.
+        unit of currency that is used in the parameter files.
 
     Returns
     -------
@@ -535,7 +608,7 @@ def calculate_nh3_pipeline_costs(distance, quantity, elec_cost,
     interest : float
         interest rate on capital investments.
     currency : string
-        type of currency that is used in the parameter files.
+        unit of currency that is used in the parameter files.
 
     Returns
     -------
@@ -598,3 +671,219 @@ def calculate_nh3_pipeline_costs(distance, quantity, elec_cost,
     cost_per_unit = annual_costs/(quantity*1000)
 
     return cost_per_unit, f"{pipeline_type} Pipeline"
+
+def calculate_conversion_facility_costs(quantity, interest, conversion_params, currency):
+    """
+    Calculate the CAPEX cost and OPEX cost of a new copper processing facility
+    as annual equivalent value.
+
+    Parameters
+    ----------
+    quantity : float
+        annual quantity of ammonia demanded in kg.
+    interest : float
+        interest rate.
+    conversion_params : pandas DataFrame
+        contains data from conversion parameters excel sheet.
+    currency : string
+        unit of currency that is used in the parameter files.
+
+    Returns
+    -------
+    capex_per_unit : float
+        cost of CAPEX (currency unit/kg/year) for new copper processing facility.
+    opex_per_unit : float
+        cost of OPEX (currency unit/kg/year) for new copper processing facility.
+    """
+    plant_lifetime = conversion_params.loc['Plant lifetime (a)']
+    capex_exp_coef_B = conversion_params.loc[f"CapEx exp coef B ({currency}/tonne)"]
+    
+    # Proposed exponential function as used by Imperial/Cambridge team in cost curve analysis
+    # tot_capex = (capex_exp_coef_A*np.exp(-capex_exp_coef_k*(quantity/1000)) + capex_exp_coef_B) * (quantity/1000) * plant_lifetime
+    
+    # the cost curve analysis showed a flat relationship between cost and facility capacities greater than 20,000 tonnes
+    # for version 1 a flat rate for capex based on CapEx exp coef B is used until a better function/data can be identified
+    
+    # to include the affect of interest rate, a fixed 10% is assumed to have been used in analysis of coef_B
+    tot_capex = (capex_exp_coef_B * (quantity / 1000)) / CRF(0.1, plant_lifetime)
+    
+    # equivalent annual levilised capex
+    annual_capex = tot_capex * CRF(interest, plant_lifetime)
+    capex_per_unit = annual_capex / quantity
+        
+    # opex cost - based on Imperial/Cambridge team breakdown    
+    opex_df = conversion_params.loc[[f"Opex Labor ({currency}/tonne)",
+                                         f"Opex Reagents ({currency}/tonne)",
+                                         f"Opex Corporate overhead ({currency}/tonne)",
+                                         f"Opex Other ({currency}/tonne)",
+                                         f"Opex Royalties ({currency}/tonne)"]]
+    annual_opex = opex_df.sum() * (quantity/1000)
+    opex_per_unit = annual_opex / quantity
+    
+    
+    return capex_per_unit, opex_per_unit
+
+def calculate_construction_costs(hexagon, interest_rate, lifetime, long_capex,
+                                short_capex, long_opex, short_opex,
+                                construction_type_dist):
+    """
+    Calculate construction costs related to the specified construction type 
+    for copper processing. Currently works for road construction only.
+
+    Parameters
+    ----------
+    hexagon : pandas Series
+        contains geospatial information regarding a hexagonally shaped area.
+    interest_rate : float
+        interest rate on infrastructure.
+    lifetime : float or integer
+        lifetime of infrastructure.
+    long_capex : float
+        CAPEX relevant for long distances (greater than 10).
+    short_capex : float
+        CAPEX relevant for short distances (between 0 and 10).
+    long_opex : float
+        OPEX relevant for long distances (greater than 10).
+    short_opex : float
+        OPEX relevant for short distances (between 0 and 10).
+    construction_type_dist : string
+        which construction type's distance is required. Currently only road.
+
+    Returns
+    -------
+    construction_costs : float
+        costs related to construction of specified construction type.
+    """
+    dist = hexagon[f'{construction_type_dist}']
+    if dist==0:
+        construction_costs = 0.
+    elif dist<10:
+        construction_costs = (dist * short_capex * CRF(interest_rate, lifetime)
+                                + dist * short_opex)
+    else:
+        construction_costs = (dist * long_capex * CRF(interest_rate, lifetime)
+                                + dist * long_opex)
+    return construction_costs
+    
+def compute_geodesic_distance_matrix(gdf1, gdf2):
+    """
+    Compute a geodesic distance matrix (in km) between the centroids of two 
+    GeoDataFrames.
+
+    Pairwise great-circle distances are calculated using 
+    `geopy.distance.geodesic` between the centroid of each geometry in `gdf1` 
+    and each in `gdf2`.
+
+    Parameters
+    ----------
+    gdf1 : geopandas GeoDataFrame
+        First set of geometries. Distances will be computed from each geometry 
+        in this GeoDataFrame to each geometry in `gdf2`.
+    gdf2 : geopandas GeoDataFrame
+        Second set of geometries. Distances will be computed from each geometry 
+        in `gdf1` to each geometry in this GeoDataFrame.
+
+    Returns
+    -------
+     : pandas DataFrame
+        Distance matrix with rows indexed by `gdf1` and columns indexed by 
+        `gdf2`.
+    """
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="Geometry is in a geographic CRS")
+        centroids1 = gdf1.centroid
+        centroids2 = gdf2.centroid
+
+    distances = np.empty((gdf1.shape[0], gdf2.shape[0]))
+    # The use of centroid throws a UserWarning when a geographic CRS 
+    # (e.g. EPSG=4326) is used. Ideally you should convert to a projected crs 
+    # (ideally with equal area cylindrical?) then back again.
+    for i, p1 in enumerate(centroids1):
+        for j, p2 in enumerate(centroids2):
+            distances[i,j] = geopy.distance.geodesic((p1.y, p1.x),
+                                                        (p2.y, p2.x)).km
+  
+    return pd.DataFrame(distances, index=gdf1.index, columns=gdf2.index)
+
+def nearest_hexagon_to_location(location_id, hexagon_to_location_distances):
+    """
+    Find the nearest hexagon to a specified location.
+
+    This function identifies the hexagon with the minimum distance to the
+    given location, based on a distance matrix where rows represent hexagons
+    and columns represent general locations (e.g., demand points or feedstock
+    points).
+
+    Parameters
+    ----------
+    location_id : string
+        Column label in the distance matrix corresponding to the location
+        of interest.
+    hexagon_to_location_distances : pandas DataFrame
+        A distance matrix with hexagon indices as rows and location indices
+        as columns. Values represent distances between each hexagon and each
+        location.
+
+    Returns
+    -------
+    nearest_hex : integer
+        The index of the nearest hexagon to the specified location.
+    """
+    nearest_hex = hexagon_to_location_distances.loc[:, location_id].sort_values().index[0]
+    return nearest_hex
+
+def allocate_feedstock_sources(feedstock_points_gdf,
+                                hexagon_to_feedstock_distance_matrix,
+                                hex_index, 
+                                required_quantity):
+    """
+    Allocate feedstock from nearest feedstock points to meet a required 
+    quantity.
+
+    This function ranks feedstock points by distance to a specified hexagon,
+    computes cumulative capacities, and allocates feedstock up to the required
+    quantity on a closest-first basis.
+
+    Parameters
+    ----------
+    feedstock_points_gdf : geopandas GeoDataFrame
+        GeoDataFrame of feedstock points.
+    hexagon_to_feedstock_distance_matrix : pandas DataFrame
+        Distance matrix with hexagon indices as rows and feedstock point 
+        indices as columns.
+    hex_index : int
+        Row label in `hexagon_to_feedstock_distance_matrix` identifying the
+        hexagon for which feedstock is required.
+    required_quantity : float
+        Quantity of feedstock required in kg/year.
+
+    Returns
+    -------
+    feedstock : pandas DataFrame
+        Ranked feedstock points up to and including the row where cumulative 
+        allocation meets/exceeds required_quantity.
+    """
+    # Extract distances for the specified hexagon and rename column to 'distance'
+    distances = hexagon_to_feedstock_distance_matrix.loc[hex_index, :].rename("distance")
+
+    # Merge distances into feedstock points and sort by proximity
+    ranked = feedstock_points_gdf.merge(distances, 
+                                        left_index=True, 
+                                        right_index=True
+                                        ).sort_values(by="distance")
+
+    ranked["Cumulative [kg/year]"] = ranked[['Annual capacity [kg/a]']].cumsum()
+    ranked["Feedstock used [kg/year]"] = 0.0
+    
+    remaining = float(required_quantity)
+
+    for idx, row in ranked.iterrows():
+        if remaining <= 0:
+            break
+        available = float(row["Annual capacity [kg/a]"])
+        used = min(available, remaining)
+        ranked.at[idx,"Feedstock used [kg/year]"] = used
+        remaining -= used
+        
+    feedstock = ranked.loc[:ranked[ranked["Cumulative [kg/year]"] >= required_quantity].index[0], :]
+    return feedstock

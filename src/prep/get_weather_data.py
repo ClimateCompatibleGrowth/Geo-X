@@ -1,7 +1,7 @@
 """
 @authors: 
  - Claire Halloran
- - Samiyha Naqvi, University of Oxford, samiyha.naqvi@eng.ox.ac.uk
+ - Samiyha Naqvi
  - Alycia Leonard, University of Oxford, alycia.leonard@eng.ox.ac.uk
 
 This script fetches historical weather data to calculate wind and solar potential
@@ -12,8 +12,21 @@ Create cutouts with `atlite <https://atlite.readthedocs.io/en/latest/>`_.
 import atlite
 import geopandas as gpd
 import logging
+from os import makedirs
+from os.path import exists
 
-from utils import check_folder_exists
+def check_folder_exists(name):
+    """
+    Create folders if they do not already exist.
+
+    ...
+    Parameters
+    ----------
+    name : string
+        File name to be checked.
+    """
+    if not exists(name):
+        makedirs(name)
 
 def calculate_coords(hexagons):
     """

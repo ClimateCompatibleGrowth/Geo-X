@@ -1,14 +1,16 @@
 """
 @authors: 
  - Alycia Leonard, University of Oxford, alycia.leonard@eng.ox.ac.uk
- - Samiyha Naqvi, University of Oxford, samiyha.naqvi@eng.ox.ac.uk
+ - Samiyha Naqvi
+ - Mulako Mukelabai, University of Oxford, mulako.mukelabai@eng.ox.ac.uk
+
 
 Add attributes to hex file for cost of each component.
 """
 import geopandas as gpd
 import pandas as pd
 
-from functions import CRF
+from functions import CRF, annualise_capex_with_replacements
 
 if __name__ == "__main__":
     # Load hexagons
@@ -23,6 +25,8 @@ if __name__ == "__main__":
     country_excel_path = snakemake.input.country_parameters
     country_parameters = pd.read_excel(country_excel_path, index_col='Country')
     country_series = country_parameters.iloc[0]
+    # Currency
+    currency = snakemake.config["currency"]
     if plant_type == "hydrogen":
         # Battery
         storage_csv_path = 'parameters/basic_h2_plant/storage_units.csv'
@@ -46,12 +50,22 @@ if __name__ == "__main__":
         # Generators 
         generators_csv_path = 'parameters/basic_nh3_plant/generators.csv'
         generators_parameters = pd.read_csv(generators_csv_path, index_col='name')
+    elif plant_type == "copper":
+        # Rectifier and Inverter
+        links_csv_path = 'parameters/basic_cu_plant/links.csv'
+        links_parameters = pd.read_csv(links_csv_path, index_col='name')
+        # Battery
+        storage_csv_path = 'parameters/basic_cu_plant/storage_units.csv'
+        storage_parameters = pd.read_csv(storage_csv_path, index_col='name')
+        # Generators
+        generators_csv_path = 'parameters/basic_cu_plant/generators.csv'
+        generators_parameters = pd.read_csv(generators_csv_path, index_col='name')
 
     demand_centers = demand_parameters.index
 
     # For each demand center, get costs for each component
     for demand_center in demand_centers:
-        print(f"\nCalculating for {demand_center} begins...")
+        print(f"\nCalculating for {demand_center} begins")
   
         # Store CRF from plant data
         interest_plant = country_series['Plant interest rate']
@@ -60,62 +74,144 @@ if __name__ == "__main__":
         
         # Work out the cost for each component using the data for the country 
         # you are looking at
-        # Battery
-        if plant_type == "hydrogen":
-            capital_cost_battery = storage_parameters.loc['Battery', 'capital_cost']
-        elif plant_type == "ammonia":
-            capital_cost_battery = stores_parameters.loc['Battery', 'capital_cost']
-        hexagons[f'{demand_center} battery costs'] = \
-            hexagons[f'{demand_center} battery capacity'] *\
-                capital_cost_battery * crf_plant
-        hexagons[f'{demand_center} LC - battery costs portion'] = \
-            hexagons[f'{demand_center} battery costs']/ \
-                demand_parameters.loc[demand_center, 'Annual demand [kg/a]']
-        
-        # Electrolyzer
-        capital_cost_electrolyzer = links_parameters.loc['Electrolysis', 'capital_cost']
-        hexagons[f'{demand_center} electrolyzer costs'] = \
-            hexagons[f'{demand_center} electrolyzer capacity'] *\
-                capital_cost_electrolyzer * crf_plant
-        hexagons[f'{demand_center} LC - electrolyzer portion'] = \
-            hexagons[f'{demand_center} electrolyzer costs']/ \
-                demand_parameters.loc[demand_center, 'Annual demand [kg/a]']
-        
-        # H2 Storage
-        if plant_type == "hydrogen":
-            capital_cost_h2_storage = stores_parameters.loc['Compressed H2 Store', 'capital_cost']
-        else:
-            capital_cost_h2_storage = stores_parameters.loc['CompressedH2Store', 'capital_cost']
-        hexagons[f'{demand_center} H2 storage costs'] = \
-            hexagons[f'{demand_center} H2 storage capacity'] *\
-                capital_cost_h2_storage * crf_plant
-        hexagons[f'{demand_center} LC - H2 storage portion'] = \
-            hexagons[f'{demand_center} H2 storage costs']/ \
-                demand_parameters.loc[demand_center, 'Annual demand [kg/a]']
-        
-        # HB - ammonia only
-        if plant_type == "ammonia":
-            capital_cost_hb = links_parameters.loc['HB', 'capital_cost']
-            hexagons[f'{demand_center} HB costs'] = \
-                hexagons[f'{demand_center} HB capacity'] *\
-                    capital_cost_hb * crf_plant
-            hexagons[f'{demand_center} LC - HB portion'] = \
-                hexagons[f'{demand_center} HB costs']/ \
-                    demand_parameters.loc[demand_center, 'Annual demand [kg/a]']
+        if plant_type == 'copper':
+            annual_demand = demand_parameters.loc[demand_center, 'Annual demand [kg/a]']
+            battery_interest = country_series['Battery interest rate']
+            battery_lifetime = country_series['Battery lifetime (years)']
+            plant_lifetime = country_series['Plant lifetime (years)']
+            system_types = ['offgrid','hybrid']
+            for system_type in system_types:
+                # Rectifier
+                rectifier_capacity_col = f'{demand_center} {system_type} rectifier capacity (MW)'
+                capital_cost_rectifier = links_parameters.loc['Rectifier', 'capital_cost']
+                hexagons[f'{demand_center} {system_type} rectifier costs'] = \
+                    hexagons[rectifier_capacity_col] *\
+                        capital_cost_rectifier * crf_plant
+                hexagons[f'{demand_center} LC - {system_type} rectifier costs cost ({currency}/kg/year)'] = \
+                    hexagons[f'{demand_center} {system_type} rectifier costs']/ \
+                        annual_demand
+                
+                # Inverter
+                inverter_capacity_col = f'{demand_center} {system_type} inverter capacity (MW)'
+                capital_cost_inverter = links_parameters.loc['Inverter', 'capital_cost']
+                hexagons[f'{demand_center} {system_type} inverter costs'] = \
+                    hexagons[inverter_capacity_col] *\
+                        capital_cost_inverter * crf_plant
+                hexagons[f'{demand_center} LC - {system_type} inverter costs cost ({currency}/kg/year)'] = \
+                    hexagons[f'{demand_center} {system_type} inverter costs']/ \
+                        annual_demand
+                
+                # Battery
+                battery_capacity_col = f'{demand_center} {system_type} battery capacity (MW)'
+                capital_cost_battery = storage_parameters.loc['Battery', 'capital_cost']
+                battery_annualised_per_mw = annualise_capex_with_replacements(
+                    capital_cost_battery,
+                    battery_interest,
+                    plant_lifetime,
+                    battery_lifetime,
+                )
+                hexagons[f'{demand_center} {system_type} battery costs'] = \
+                    hexagons[battery_capacity_col] * battery_annualised_per_mw
+                hexagons[f'{demand_center} LC - {system_type} battery costs cost ({currency}/kg/year)'] = \
+                    hexagons[f'{demand_center} {system_type} battery costs']/ \
+                        annual_demand
 
-        # Work out CRF, then work out the cost for each generator using the data 
-        # for the country you are looking at
-        for generator in generators:
-            generator_capitalized = generator.capitalize()
-            interest_generator = country_series[f'{generator_capitalized} interest rate']
-            lifetime_generator = country_series[f'{generator_capitalized} lifetime (years)']
-            crf_generator = CRF(interest_generator, lifetime_generator)
-            capital_cost_generator = generators_parameters.loc[f'{generator_capitalized}', 'capital_cost']
-            hexagons[f'{demand_center} {generator} costs'] = \
-                hexagons[f'{demand_center} {generator} capacity'] * capital_cost_generator * crf_generator
-            hexagons[f'{demand_center} LC - {generator} portion'] = \
-                hexagons[f'{demand_center} {generator} costs']/ \
+                # Work out CRF, then work out the cost for each generator using the data 
+                # for the country you are looking at
+                for generator in generators:
+                    objective_component_col = (
+                        f'{demand_center} {system_type} {generator} objective component cost ({currency}/kg/year)'
+                    )
+                    hexagons[f'{demand_center} {system_type} {generator} costs'] = (
+                        hexagons[objective_component_col] * annual_demand
+                    )
+                    hexagons[f'{demand_center} LC - {system_type} {generator} cost ({currency}/kg/year)'] = \
+                        hexagons[objective_component_col]
+                
+                if system_type == 'hybrid':
+                    hexagons[f'{demand_center} LC - hybrid grid purchase costs cost ({currency}/kg/year)'] = \
+                        hexagons[f'{demand_center} hybrid grid purchase costs ({currency}/kg/year)']
+                    hexagons[f'{demand_center} LC - hybrid grid capacity charge cost ({currency}/kg/year)'] = \
+                        hexagons[f'{demand_center} hybrid grid capacity charge ({currency}/kg/year)']
+                    hexagons[f'{demand_center} LC - hybrid grid fixed charge cost ({currency}/kg/year)'] = \
+                        hexagons[f'{demand_center} hybrid grid fixed charge ({currency}/kg/year)']
+                    hexagons[f'{demand_center} LC - hybrid grid construction charge cost ({currency}/kg/year)'] = \
+                        hexagons[f'{demand_center} hybrid grid construction charge ({currency}/kg/year)']
+                    hexagons[f'{demand_center} LC - {system_type} grid costs total cost ({currency}/kg/year)'] = (
+                        hexagons[f'{demand_center} LC - hybrid grid purchase costs cost ({currency}/kg/year)']
+                        + hexagons[f'{demand_center} LC - hybrid grid capacity charge cost ({currency}/kg/year)']
+                        + hexagons[f'{demand_center} LC - hybrid grid fixed charge cost ({currency}/kg/year)']
+                        + hexagons[f'{demand_center} LC - hybrid grid construction charge cost ({currency}/kg/year)']
+                    )
+                    hexagons[f'{demand_center} {system_type} grid costs'] = \
+                        hexagons[f'{demand_center} LC - {system_type} grid costs total cost ({currency}/kg/year)'] * annual_demand
+
+        else:
+            # Battery
+            if plant_type == "hydrogen":
+                capital_cost_battery = storage_parameters.loc['Battery', 'capital_cost']
+            elif plant_type == "ammonia":
+                capital_cost_battery = stores_parameters.loc['Battery', 'capital_cost']
+            hexagons[f'{demand_center} battery costs'] = \
+                hexagons[f'{demand_center} battery capacity'] *\
+                    capital_cost_battery * crf_plant
+            hexagons[f'{demand_center} LC - battery costs cost ({currency}/kg/year)'] = \
+                hexagons[f'{demand_center} battery costs']/ \
                     demand_parameters.loc[demand_center, 'Annual demand [kg/a]']
+            
+            # Electrolyzer
+            if plant_type == 'hydrogen' or plant_type == 'ammonia':
+                electrolyzer_annual_cost_col = f'{demand_center} electrolyzer annual costs'
+                hexagons[f'{demand_center} electrolyzer costs'] = \
+                    hexagons[electrolyzer_annual_cost_col]
+                hexagons[f'{demand_center} LC - electrolyzer cost ({currency}/kg/year)'] = \
+                    hexagons[f'{demand_center} electrolyzer costs']/ \
+                        demand_parameters.loc[demand_center, 'Annual demand [kg/a]']
+
+            # H2 Storage
+            if plant_type == 'hydrogen' or plant_type == 'ammonia':
+                if plant_type == "hydrogen":
+                    capital_cost_h2_storage = stores_parameters.loc['Compressed H2 Store', 'capital_cost']
+                else:
+                    capital_cost_h2_storage = stores_parameters.loc['CompressedH2Store', 'capital_cost']
+                hexagons[f'{demand_center} H2 storage costs'] = \
+                    hexagons[f'{demand_center} H2 storage capacity'] *\
+                        capital_cost_h2_storage * crf_plant
+                hexagons[f'{demand_center} LC - H2 storage cost ({currency}/kg/year)'] = \
+                    hexagons[f'{demand_center} H2 storage costs']/ \
+                        demand_parameters.loc[demand_center, 'Annual demand [kg/a]']
+            
+            # HB and NH3 storage - ammonia only
+            if plant_type == "ammonia":
+                capital_cost_hb = links_parameters.loc['HB', 'capital_cost']
+                hexagons[f'{demand_center} HB costs'] = \
+                    hexagons[f'{demand_center} HB capacity'] *\
+                        capital_cost_hb * crf_plant
+                hexagons[f'{demand_center} LC - HB cost ({currency}/kg/year)'] = \
+                    hexagons[f'{demand_center} HB costs']/ \
+                        demand_parameters.loc[demand_center, 'Annual demand [kg/a]']
+                
+                capital_cost_nh3_storage = stores_parameters.loc['Ammonia', 'capital_cost']
+                hexagons[f'{demand_center} NH3 storage costs'] = \
+                    hexagons[f'{demand_center} NH3 storage capacity'] *\
+                        capital_cost_nh3_storage * crf_plant
+                hexagons[f'{demand_center} LC - NH3 storage cost ({currency}/kg/year)'] = \
+                    hexagons[f'{demand_center} NH3 storage costs']/ \
+                        demand_parameters.loc[demand_center, 'Annual demand [kg/a]']
+
+            # Work out CRF, then work out the cost for each generator using the data 
+            # for the country you are looking at
+            for generator in generators:
+                generator_capitalized = generator.capitalize()
+                interest_generator = country_series[f'{generator_capitalized} interest rate']
+                lifetime_generator = country_series[f'{generator_capitalized} lifetime (years)']
+                crf_generator = CRF(interest_generator, lifetime_generator)
+                capital_cost_generator = generators_parameters.loc[f'{generator_capitalized}', 'capital_cost']
+                hexagons[f'{demand_center} {generator} costs'] = \
+                    hexagons[f'{demand_center} {generator} capacity'] * capital_cost_generator * crf_generator
+                hexagons[f'{demand_center} LC - {generator} cost ({currency}/kg/year)'] = \
+                    hexagons[f'{demand_center} {generator} costs']/ \
+                        demand_parameters.loc[demand_center, 'Annual demand [kg/a]']
             
     print("\nCalculations complete.\n")
     hexagons.to_file(snakemake.output[0], driver='GeoJSON', encoding='utf-8')

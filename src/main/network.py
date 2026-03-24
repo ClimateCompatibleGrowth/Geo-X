@@ -1,16 +1,22 @@
 """
 @authors:
- - Samiyha Naqvi, University of Oxford, samiyha.naqvi@eng.ox.ac.uk
+ - Samiyha Naqvi
  - Alycia Leonard, University of Oxford, alycia.leonard@eng.ox.ac.uk
+ - Mulako Mukelabai, University of Oxford, mulako.mukelabai@eng.ox.ac.uk
 Includes code from Nicholas Salmon, University of Oxford, for setting up the 
 network.
 
 Class representing a PyPSA Network. Contains functions used for set up.
 """
 import numpy as np
+import pandas as pd
 import pypsa
 
-from functions import CRF
+from functions import (
+    CRF,
+    ELECTROLYSER_STACK_METADATA_NAME,
+    annualise_capex_with_replacements,
+)
 
 class Network:
     """
@@ -26,36 +32,53 @@ class Network:
         maximum capacity.
     n : pypsa Network Object
         network. Default is None.
+    electrolyser_raw_capital_cost : float or None
+        Unannualized Electrolysis link capital cost captured before the plant
+        CRF is applied.
+    electrolyser_stack_replacement_inputs : dict or None
+        Electrolyser stack replacement parameters loaded from the plant input
+        package.
 
     Methods
     -------
     set_network(demand_profile, times, country_series):
         sets up the network.
-    set_generators_in_network(country_series):
-        sets provided generator in the network.
+    add_community_energy_demand(energy_access_connections, filepath):
+        adds community energy demand as a load.
+    add_grid(country_series, currency):
+        adds grid as a generator.
+    update_generators(country_series):
+        updates generator information.
     _create_override_components():
         set up new component attributes as required.
+    _set_electrolyser_stack_replacement_inputs():
+        extract stack-replacement inputs from the imported storage-unit table.
     """
     def __init__(self, type, generators, n=None):
         """
-        Provide an network object.
+        Provide a network object.
         """
         self.type = type
         self.generators = generators
         self.n = n
+        self.electrolyser_raw_capital_cost = None
+        self.electrolyser_stack_replacement_inputs = None
+    
+    def set_network(self, demand_profile, country_series, demand_state=None, elec_kWh_per_kg=None):
+        """
+        Set up the PyPSA network and annualize technology costs in place.
 
-    def set_network(self, demand_profile, country_series):
-        '''
-        Sets up the network.
-        
-        ...
         Parameters
         ----------
-        demand_profile : pandas DataFrame
-            dataframe of commodity demand in kg in frequency configured.
-        country_series: pandas Series
-            interest rate and lifetime information.
-        '''
+        demand_profile : pandas.DataFrame
+            Commodity demand profile in the configured frequency.
+        country_series : pandas.Series
+            Country-level cost, interest-rate, and lifetime inputs.
+        demand_state : str, optional
+            Copper demand-state label used for the AC demand load.
+        elec_kWh_per_kg : float, optional
+            Copper electricity intensity in kilowatt-hours per kilogram.
+        """
         # Set standard Network, if none provided
         if self.n == None:
             self.n = pypsa.Network(override_component_attrs=self._create_override_components())
@@ -68,6 +91,9 @@ class Network:
         if self.type == "hydrogen":
             # Import the design of the H2 plant into the network
             self.n.import_from_csv_folder("parameters/basic_h2_plant")
+            self._set_electrolyser_stack_replacement_inputs()
+            if 'Electrolysis' in self.n.links.index:
+                self.electrolyser_raw_capital_cost = self.n.links.at['Electrolysis', 'capital_cost']
 
             # Import demand profile
             # Note: All flows are in MW or MWh, conversions for hydrogen done 
@@ -84,6 +110,9 @@ class Network:
         elif self.type == "ammonia":
             # Import the design of the NH3 plant into the network
             self.n.import_from_csv_folder("parameters/basic_nh3_plant")
+            self._set_electrolyser_stack_replacement_inputs()
+            if 'Electrolysis' in self.n.links.index:
+                self.electrolyser_raw_capital_cost = self.n.links.at['Electrolysis', 'capital_cost']
 
             # Import demand profile
             # Note: All flows are in MW or MWh, conversions for ammonia done 
@@ -100,15 +129,79 @@ class Network:
                                         country_series['Plant lifetime (years)'])
             # Stops pointless cycling through storage
             self.n.links.loc['HydrogenCompression', 'marginal_cost'] = 0.0001
+        elif self.type == "copper":
+            # Import the design of the Cu plant into the network
+            self.n.import_from_csv_folder("parameters/basic_cu_plant")
 
-    def set_generators_in_network(self, country_series):
+            # Import demand profile
+            # Note: All flows are in MW or MWh, conversions for Concentrate done using 0.717 kWh per kg
+            # Add the load
+            self.n.add('Load',
+                f'{demand_state} demand',
+                bus = 'AC_bus',
+                p_set = (demand_profile["Demand"] * elec_kWh_per_kg) / 1000,
+                )
+    
+            # Update and set capital costs
+            self.n.storage_units.loc["Battery", "capital_cost"] = annualise_capex_with_replacements(
+                self.n.storage_units.loc["Battery", "capital_cost"],
+                country_series['Battery interest rate'],
+                country_series['Plant lifetime (years)'],
+                country_series['Battery lifetime (years)'],
+            )
+            self.n.links.loc["Inverter", "capital_cost"] *= CRF(country_series['Plant interest rate'],
+                                                                country_series['Plant lifetime (years)'])
+            self.n.links.loc["Rectifier", "capital_cost"] *= CRF(country_series['Plant interest rate'],
+                                                                country_series['Plant lifetime (years)'])
+                                                                   
+    def add_community_energy_demand(self, energy_access_connections, filepath):
         '''
-        Sets provided generator in the network.
+        Adds community demand as a load.
+        
+        ...
+        Parameters
+        ----------
+        energy_access_connections : float
+                number of energy access connections required.
+        filepath : string
+            pathway to the community electricity access profile.
+        '''
+        # Community energy demand
+        # Basic model assumes connected to same single AC bus as facility
+        energy_access_df = pd.read_csv(filepath, index_col=0, parse_dates=True)
+        energy_access_demand = energy_access_df * energy_access_connections
+        self.n.add('Load',
+                    'Community Demand',
+                    bus = 'AC_bus',
+                    p_set = energy_access_demand['MW'])
+    
+    def add_grid(self, country_series, currency):
+        '''
+        Adds grid as a generator.
 
         ...
         Parameters
         ----------
-        country_series: pandas Series
+        country_series : pandas Series
+            electricity price and grid connection cost information.
+        currency : string
+        unit of currency that is used in the parameter files.
+        '''
+        self.n.add("Generator",
+                   "Grid",
+                   bus="AC_bus",
+                   p_nom_extendable=True,
+                   marginal_cost=country_series[f"Electricity price ({currency}/kWh)"]*1000,
+                   capital_cost=country_series[f"Grid connection cost ({currency}/kW)"]*1000)
+
+    def update_generators(self, country_series):
+        '''
+        Updates provided generators in the network.
+
+        ...
+        Parameters
+        ----------
+        country_series : pandas Series
             interest rate and lifetime information.
         '''
         # Send the generator data to the network
@@ -156,3 +249,19 @@ class Network:
         ]
         
         return override_component_attrs
+
+    def _set_electrolyser_stack_replacement_inputs(self):
+        """Extract stack-replacement inputs from the imported storage-unit table."""
+        if self.type not in {"hydrogen", "ammonia"}:
+            self.electrolyser_stack_replacement_inputs = None
+            return
+        if self.n.storage_units.empty or ELECTROLYSER_STACK_METADATA_NAME not in self.n.storage_units.index:
+            self.electrolyser_stack_replacement_inputs = None
+            return
+
+        meta = self.n.storage_units.loc[ELECTROLYSER_STACK_METADATA_NAME]
+        self.electrolyser_stack_replacement_inputs = {
+            "replacement_fraction": float(meta["capital_cost"]),
+            "stack_lifetime_hours": float(meta["max_hours"]),
+        }
+        self.n.remove("StorageUnit", ELECTROLYSER_STACK_METADATA_NAME)
