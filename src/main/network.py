@@ -2,6 +2,7 @@
 @authors:
  - Samiyha Naqvi, University of Oxford, samiyha.naqvi@eng.ox.ac.uk
  - Alycia Leonard, University of Oxford, alycia.leonard@eng.ox.ac.uk
+ - Mulako Mukelabai, University of Oxford, mulako.mukelabai@eng.ox.ac.uk
 Includes code from Nicholas Salmon, University of Oxford, for setting up the 
 network.
 
@@ -11,7 +12,11 @@ import numpy as np
 import pandas as pd
 import pypsa
 
-from functions import CRF
+from functions import (
+    CRF,
+    ELECTROLYSER_STACK_METADATA_NAME,
+    annualise_capex_with_replacements,
+)
 
 class Network:
     """
@@ -27,6 +32,12 @@ class Network:
         maximum capacity.
     n : pypsa Network Object
         network. Default is None.
+    electrolyser_raw_capital_cost : float or None
+        Unannualized Electrolysis link capital cost captured before the plant
+        CRF is applied.
+    electrolyser_stack_replacement_inputs : dict or None
+        Electrolyser stack replacement parameters loaded from the plant input
+        package.
 
     Methods
     -------
@@ -44,19 +55,24 @@ class Network:
         self.type = type
         self.generators = generators
         self.n = n
+        self.electrolyser_raw_capital_cost = None
+        self.electrolyser_stack_replacement_inputs = None
     
     def set_network(self, demand_profile, country_series, demand_state=None, elec_kWh_per_kg=None):
-        '''
-        Sets up the network.
-        
-        ...
+        """
+        Set up the PyPSA network and annualize technology costs in place.
+
         Parameters
         ----------
-        demand_profile : pandas DataFrame
-            dataframe of commodity demand in kg in frequency configured.
-        country_series : pandas Series
-            interest rate and lifetime information.
-        '''
+        demand_profile : pandas.DataFrame
+            Commodity demand profile in the configured frequency.
+        country_series : pandas.Series
+            Country-level cost, interest-rate, and lifetime inputs.
+        demand_state : str, optional
+            Copper demand-state label used for the AC demand load.
+        elec_kWh_per_kg : float, optional
+            Copper electricity intensity in kilowatt-hours per kilogram.
+        """
         # Set standard Network, if none provided
         if self.n == None:
             self.n = pypsa.Network(override_component_attrs=self._create_override_components())
@@ -69,6 +85,9 @@ class Network:
         if self.type == "hydrogen":
             # Import the design of the H2 plant into the network
             self.n.import_from_csv_folder("parameters/basic_h2_plant")
+            self._set_electrolyser_stack_replacement_inputs()
+            if 'Electrolysis' in self.n.links.index:
+                self.electrolyser_raw_capital_cost = self.n.links.at['Electrolysis', 'capital_cost']
 
             # Import demand profile
             # Note: All flows are in MW or MWh, conversions for hydrogen done 
@@ -85,6 +104,9 @@ class Network:
         elif self.type == "ammonia":
             # Import the design of the NH3 plant into the network
             self.n.import_from_csv_folder("parameters/basic_nh3_plant")
+            self._set_electrolyser_stack_replacement_inputs()
+            if 'Electrolysis' in self.n.links.index:
+                self.electrolyser_raw_capital_cost = self.n.links.at['Electrolysis', 'capital_cost']
 
             # Import demand profile
             # Note: All flows are in MW or MWh, conversions for ammonia done 
@@ -115,8 +137,12 @@ class Network:
                 )
     
             # Update and set capital costs
-            self.n.storage_units.loc["Battery", "capital_cost"] *= CRF(country_series['Battery interest rate'],
-                                                                  country_series['Battery lifetime (years)'])
+            self.n.storage_units.loc["Battery", "capital_cost"] = annualise_capex_with_replacements(
+                self.n.storage_units.loc["Battery", "capital_cost"],
+                country_series['Battery interest rate'],
+                country_series['Plant lifetime (years)'],
+                country_series['Battery lifetime (years)'],
+            )
             self.n.links.loc["Inverter", "capital_cost"] *= CRF(country_series['Plant interest rate'],
                                                                 country_series['Plant lifetime (years)'])
             self.n.links.loc["Rectifier", "capital_cost"] *= CRF(country_series['Plant interest rate'],
@@ -218,3 +244,19 @@ class Network:
         ]
         
         return override_component_attrs
+
+    def _set_electrolyser_stack_replacement_inputs(self):
+        """Extract stack-replacement inputs from the imported storage-unit table."""
+        if self.type not in {"hydrogen", "ammonia"}:
+            self.electrolyser_stack_replacement_inputs = None
+            return
+        if self.n.storage_units.empty or ELECTROLYSER_STACK_METADATA_NAME not in self.n.storage_units.index:
+            self.electrolyser_stack_replacement_inputs = None
+            return
+
+        meta = self.n.storage_units.loc[ELECTROLYSER_STACK_METADATA_NAME]
+        self.electrolyser_stack_replacement_inputs = {
+            "replacement_fraction": float(meta["capital_cost"]),
+            "stack_lifetime_hours": float(meta["max_hours"]),
+        }
+        self.n.remove("StorageUnit", ELECTROLYSER_STACK_METADATA_NAME)
