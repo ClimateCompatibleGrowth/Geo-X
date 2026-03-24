@@ -3,6 +3,7 @@
  - Claire Halloran
  - Samiyha Naqvi, University of Oxford, samiyha.naqvi@eng.ox.ac.uk
  - Alycia Leonard, University of Oxford, alycia.leonard@eng.ox.ac.uk
+ - Mulako Mukelabai, University of Oxford, mulako.mukelabai@eng.ox.ac.uk
 
 Bring together all previous data to calculate lowest-cost of commodity.
 """
@@ -51,6 +52,24 @@ def main():
                                     + hexagons[f'{demand_center} diesel cost ({currency}/kg/year)']
                                     + hexagons[f'{demand_center} feedstock cost ({currency}/kg/year)']
                                     + hexagons[f'{demand_center} lowest water cost ({currency}/kg/year)'])
+
+            total_cols = [
+                f'{demand_center} total grid LCOP',
+                f'{demand_center} total hybrid LCOP',
+                f'{demand_center} total offgrid LCOP',
+            ]
+            if all(c in hexagons.columns for c in total_cols):
+                total_frame = hexagons[total_cols].copy()
+                hexagons[f'{demand_center} lowest LCOP'] = total_frame.min(axis=1, skipna=True)
+                all_nan_rows = total_frame.isna().all(axis=1)
+                hexagons.loc[all_nan_rows, f'{demand_center} lowest LCOP'] = np.nan
+                system_map = {
+                    f'{demand_center} total grid LCOP': 'grid',
+                    f'{demand_center} total hybrid LCOP': 'hybrid',
+                    f'{demand_center} total offgrid LCOP': 'offgrid',
+                }
+                hexagons[f'{demand_center} lowest LCOP system'] = total_frame.idxmin(axis=1, skipna=True).map(system_map)
+                hexagons.loc[all_nan_rows, f'{demand_center} lowest LCOP system'] = np.nan
         else:
             if plant_type == "hydrogen":
                 trucking_tranport_costs = hexagons[f'{demand_center} trucking transport and conversion costs']

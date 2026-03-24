@@ -32,6 +32,12 @@ class Network:
         maximum capacity.
     n : pypsa Network Object
         network. Default is None.
+    electrolyser_raw_capital_cost : float or None
+        Unannualized Electrolysis link capital cost captured before the plant
+        CRF is applied.
+    electrolyser_stack_replacement_inputs : dict or None
+        Electrolyser stack replacement parameters loaded from the plant input
+        package.
 
     Methods
     -------

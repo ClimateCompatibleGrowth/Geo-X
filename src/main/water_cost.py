@@ -3,12 +3,34 @@
  - Claire Halloran
  - Samiyha Naqvi, University of Oxford, samiyha.naqvi@eng.ox.ac.uk
  - Alycia Leonard, University of Oxford, alycia.leonard@eng.ox.ac.uk
+ - Mulako Mukelabai, University of Oxford, mulako.mukelabai@eng.ox.ac.uk
 
 Water costs for commodity production in each hexagon.
 """
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+
+def _nan_safe_min_two(a, b):
+    '''
+    Returns the minimum of two specified values or NaN.
+
+    Parameters
+    ----------
+    a : float
+        value representing a distance
+    b : float
+        another value representing a distance
+
+    Returns
+    -------
+     : float
+        minimum value of the two given.
+    '''
+    candidates = [x for x in [a, b] if pd.notna(x)]
+    if len(candidates) == 0:
+        return np.nan
+    return min(candidates)
 
 def main():
     print("Calculations begin\n")
@@ -63,26 +85,23 @@ def main():
                 print(f"Calculating water costs for {i+1} of {len_hexagons}")
                 waterbody_dist = hexagons['waterbody_dist'][i]
                 waterway_dist = hexagons['waterway_dist'][i]
-                if has_ocean_dists:
-                    ocean_dist = hexagons['ocean_dist'][i]
+                ocean_dist = hexagons['ocean_dist'][i] if has_ocean_dists else np.nan
+
 
                 water_usages_L[i] = annual_demand_quantity * water_intensity
                 freshwater_costs[i] = (water_spec_cost * water_usages_L[i]
                                             + water_transport_cost * water_usages_L[i] * min([waterbody_dist, waterway_dist])/100)/1000
                 freshwater_cost_per_kg_product[i] = freshwater_costs[i] / annual_demand_quantity
                 
-                if has_ocean_dists:
-                    ocean_water_costs[i] = (water_spec_cost * water_usages_L[i]
-                                            + water_transport_cost * water_usages_L[i] * ocean_dist/100)/1000
-                    ocean_water_cost_per_kg_product[i] = ocean_water_costs[i] / annual_demand_quantity
-                else:
-                    ocean_water_costs[i] = np.nan
-                    ocean_water_cost_per_kg_product[i] = np.nan
+                ocean_water_costs[i] = (water_spec_cost * water_usages_L[i]
+                                        + water_transport_cost * water_usages_L[i] * ocean_dist/100)/1000
+                ocean_water_cost_per_kg_product[i] = ocean_water_costs[i] / annual_demand_quantity
 
-                if has_ocean_dists:
-                    lowest_cost[i] = min(ocean_water_cost_per_kg_product[i], freshwater_cost_per_kg_product[i])
-                else:
-                    lowest_cost[i] = freshwater_cost_per_kg_product[i]
+
+                lowest_cost[i] = _nan_safe_min_two(
+                    ocean_water_cost_per_kg_product[i],
+                    freshwater_cost_per_kg_product[i],
+                    )
 
             hexagons[f'{demand_center} water usage (L)'] = water_usages_L
             hexagons[f'{demand_center} freshwater cost ({currency}/kg/year)'] = freshwater_cost_per_kg_product
@@ -117,28 +136,24 @@ def main():
             print(f"Calculating water costs for {i+1} of {len_hexagons}")
             waterbody_dist = hexagons['waterbody_dist'][i]
             waterway_dist = hexagons['waterway_dist'][i]
-            ocean_dist = hexagons['ocean_dist'][i]
+            ocean_dist = hexagons['ocean_dist'][i] if has_ocean_dists else np.nan
             
             h2o_costs_dom_water_bodies[i] =(water_spec_cost 
                                                 + (water_transport_cost/100)
-                                                * np.namin(waterbody_dist, waterway_dist) 
+                                                * min(waterbody_dist, waterway_dist) 
                                                 + electricity_demand_h2o_treatment
                                                 * elec_price
                                             ) * water_demand/1000
-            if has_ocean_dists:
-                h2o_costs_ocean[i] =(water_spec_cost 
-                                        + (water_transport_cost/100)
-                                        * ocean_dist
-                                        + electricity_demand_ocean_h2o_treatment
-                                        * elec_price
-                                    ) * water_demand/1000
-            else:
-                h2o_costs_ocean[i] = np.nan
+
+            h2o_costs_ocean[i] =(water_spec_cost 
+                                    + (water_transport_cost/100)
+                                    * ocean_dist
+                                    + electricity_demand_ocean_h2o_treatment
+                                    * elec_price
+                                ) * water_demand/1000
             
-            if has_ocean_dists:
-                min_h2o_costs[i] = min(h2o_costs_dom_water_bodies[i], h2o_costs_ocean[i])
-            else:
-                min_h2o_costs[i] = h2o_costs_dom_water_bodies[i]
+            
+            min_h2o_costs[i] = _nan_safe_min_two(h2o_costs_dom_water_bodies[i], h2o_costs_ocean[i])
         
         hexagons['Ocean water cost'] = h2o_costs_ocean
         hexagons['Freshwater cost'] = h2o_costs_dom_water_bodies
