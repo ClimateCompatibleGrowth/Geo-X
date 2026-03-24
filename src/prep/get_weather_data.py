@@ -1,7 +1,7 @@
 """
 @authors: 
  - Claire Halloran
- - Samiyha Naqvi, University of Oxford, samiyha.naqvi@eng.ox.ac.uk
+ - Samiyha Naqvi
  - Alycia Leonard, University of Oxford, alycia.leonard@eng.ox.ac.uk
 
 This script fetches historical weather data to calculate wind and solar potential

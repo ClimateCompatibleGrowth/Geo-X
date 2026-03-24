@@ -1,7 +1,7 @@
 """
 @authors: 
  - Claire Halloran
- - Samiyha Naqvi, University of Oxford, samiyha.naqvi@eng.ox.ac.uk
+ - Samiyha Naqvi
  - Alycia Leonard, University of Oxford, alycia.leonard@eng.ox.ac.uk
 
 This script visualizes the spatial cost of the commodity for each demand center.

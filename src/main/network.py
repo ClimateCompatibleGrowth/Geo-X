@@ -1,6 +1,6 @@
 """
 @authors:
- - Samiyha Naqvi, University of Oxford, samiyha.naqvi@eng.ox.ac.uk
+ - Samiyha Naqvi
  - Alycia Leonard, University of Oxford, alycia.leonard@eng.ox.ac.uk
  - Mulako Mukelabai, University of Oxford, mulako.mukelabai@eng.ox.ac.uk
 Includes code from Nicholas Salmon, University of Oxford, for setting up the 
@@ -43,10 +43,16 @@ class Network:
     -------
     set_network(demand_profile, times, country_series):
         sets up the network.
-    set_generators_in_network(country_series):
-        sets provided generator in the network.
+    add_community_energy_demand(energy_access_connections, filepath):
+        adds community energy demand as a load.
+    add_grid(country_series, currency):
+        adds grid as a generator.
+    update_generators(country_series):
+        updates generator information.
     _create_override_components():
         set up new component attributes as required.
+    _set_electrolyser_stack_replacement_inputs():
+        extract stack-replacement inputs from the imported storage-unit table.
     """
     def __init__(self, type, generators, n=None):
         """
@@ -180,7 +186,6 @@ class Network:
             electricity price and grid connection cost information.
         currency : string
         unit of currency that is used in the parameter files.
-
         '''
         self.n.add("Generator",
                    "Grid",

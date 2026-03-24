@@ -17,7 +17,7 @@ freq: '1H'
 # Modify generators_dict to hold the generators you would like to use. Can
 # be 'solar', 'wind', 'hydro' and 'geothermal'
 # Make sure it is in the same style as below
-generators_dict: {'solar' : [], 'wind' : [], 'hydro' : []}
+generators_dict: {'solar' : [], 'wind' : [], 'hydro' : [], 'geothermal' : [],}
 panel: 'CSi'
 turbine: 'NREL_ReferenceTurbine_2020ATB_4MW'
 gen_capacity:
@@ -36,7 +36,7 @@ efficiency:
 solver : 'gurobi'
 
 water:
-    has_ocean_dists: False
+    has_ocean_dists: True
     # Change as necessary, if plant_type is 'hydrogen' or 'ammonia'
     has_limit: False
     # Enter a value for annual limit on water available for electrolysis, in 

@@ -1,7 +1,7 @@
 """
 @authors:
  - Claire Halloran
- - Samiyha Naqvi, University of Oxford, samiyha.naqvi@eng.ox.ac.uk
+ - Samiyha Naqvi
  - Alycia Leonard, University of Oxford, alycia.leonard@eng.ox.ac.uk
 Contains code originally written by Leander MÃ¼ller, RWTH Aachen University
 

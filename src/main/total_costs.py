@@ -1,7 +1,7 @@
 """
 @authors:
  - Claire Halloran
- - Samiyha Naqvi, University of Oxford, samiyha.naqvi@eng.ox.ac.uk
+ - Samiyha Naqvi
  - Alycia Leonard, University of Oxford, alycia.leonard@eng.ox.ac.uk
  - Mulako Mukelabai, University of Oxford, mulako.mukelabai@eng.ox.ac.uk
 

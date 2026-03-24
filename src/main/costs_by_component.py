@@ -1,7 +1,7 @@
 """
 @authors: 
  - Alycia Leonard, University of Oxford, alycia.leonard@eng.ox.ac.uk
- - Samiyha Naqvi, University of Oxford, samiyha.naqvi@eng.ox.ac.uk
+ - Samiyha Naqvi
  - Mulako Mukelabai, University of Oxford, mulako.mukelabai@eng.ox.ac.uk
 
 
@@ -25,6 +25,8 @@ if __name__ == "__main__":
     country_excel_path = snakemake.input.country_parameters
     country_parameters = pd.read_excel(country_excel_path, index_col='Country')
     country_series = country_parameters.iloc[0]
+    # Currency
+    currency = snakemake.config["currency"]
     if plant_type == "hydrogen":
         # Battery
         storage_csv_path = 'parameters/basic_h2_plant/storage_units.csv'
@@ -56,10 +58,8 @@ if __name__ == "__main__":
         storage_csv_path = 'parameters/basic_cu_plant/storage_units.csv'
         storage_parameters = pd.read_csv(storage_csv_path, index_col='name')
         # Generators
-        generators_csv_path = 'parameters/basic_h2_plant/generators.csv'
+        generators_csv_path = 'parameters/basic_cu_plant/generators.csv'
         generators_parameters = pd.read_csv(generators_csv_path, index_col='name')
-        # Currency
-        currency = snakemake.config["currency"]
 
     demand_centers = demand_parameters.index
 

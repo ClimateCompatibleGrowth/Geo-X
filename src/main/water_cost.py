@@ -1,7 +1,7 @@
 """
 @authors: 
  - Claire Halloran
- - Samiyha Naqvi, University of Oxford, samiyha.naqvi@eng.ox.ac.uk
+ - Samiyha Naqvi
  - Alycia Leonard, University of Oxford, alycia.leonard@eng.ox.ac.uk
  - Mulako Mukelabai, University of Oxford, mulako.mukelabai@eng.ox.ac.uk
 
@@ -123,16 +123,6 @@ def main():
 
         # Calculating water costs for each hexagon
         for i in range(len_hexagons):
-            # -- doesn't work below - maybe just leave water calculations in as is 
-            # quick and would leave the 
-            # transport_state = hexagons[f'{demand_center} trucking state'][i]
-            # # Only optimises the demand center hexagon
-            # if snakemake.config['restrict_hexagons'] and transport_state != f"{demand_center} hexagon":
-            #     h2o_costs_ocean[i] = np.nan
-            #     h2o_costs_dom_water_bodies[i] = np.nan
-            #     min_h2o_costs[i] = np.nan
-            #     continue
-
             print(f"Calculating water costs for {i+1} of {len_hexagons}")
             waterbody_dist = hexagons['waterbody_dist'][i]
             waterway_dist = hexagons['waterway_dist'][i]
