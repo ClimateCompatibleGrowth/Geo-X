@@ -470,10 +470,10 @@ if __name__ == "__main__":
     if "hydro" in generators:
         # Creating hydropower generator profile
         print("Creating hydropower profile for network")
-        location_hydro = gpd.read_file(f'data/{snakemake.wildcards.country}/hydro/{snakemake.wildcards.country}_hydropower_dams.gpkg')
+        location_hydro = gpd.read_file(f'data/{snakemake.wildcards.country}/{snakemake.wildcards.country}_hydropower_dams.gpkg')
         location_hydro['lat'] = location_hydro.geometry.y
         location_hydro['lon'] = location_hydro.geometry.x
-        hydrobasins = gpd.read_file(glob.glob(f'data/{snakemake.wildcards.country}/hydro/*.shp')[0])
+        hydrobasins = gpd.read_file(glob.glob(f'data/{snakemake.wildcards.country}/*.shp')[0])
         
         runoff = cutout.hydro(
             plants=location_hydro,
@@ -523,7 +523,7 @@ if __name__ == "__main__":
     if "geothermal" in generators:
         # Creating geothermal generator profile
         print("Creating geothermal profile for network")
-        geo_locations = gpd.read_file(f'data/{snakemake.wildcards.country}/geothermal/{snakemake.wildcards.country}_geothermal_plants.gpkg')
+        geo_locations = gpd.read_file(f'data/{snakemake.wildcards.country}/{snakemake.wildcards.country}_geothermal_plants.gpkg')
         geo_hex_mapping = gpd.sjoin(geo_locations, hexagons, how='left', 
                                       predicate='within')
         
@@ -545,6 +545,31 @@ if __name__ == "__main__":
         
         profiles["geothermal"] = geothermal_profile
     
+    if "nuclear" in generators:
+        # Creating nuclear generator profile
+        print("Creating nuclear profile for network")
+        nuclear_locations = gpd.read_file(f'data/{snakemake.wildcards.country}/{snakemake.wildcards.country}_nuclear_plants.gpkg')
+        nuclear_hex_mapping = gpd.sjoin(nuclear_locations, hexagons, how='left', 
+                                      predicate='within')
+        
+        nuclear_profile = xr.DataArray(
+            data=np.zeros((len_hexagons)),
+            dims=['hexagon'],
+            coords={'hexagon': np.arange(len_hexagons)}
+            )
+        
+        for hex_index in range(len_hexagons):
+            plants_in_hex = nuclear_hex_mapping[nuclear_hex_mapping['index_right'] == hex_index].index.tolist()
+            if len(plants_in_hex) > 0:
+                hex_capacity_factor = snakemake.config['efficiency']['nuclear']
+                plant_capacities = xr.DataArray(nuclear_locations.loc[plants_in_hex]['capacity'].values, dims=['plant'])
+
+                weights = plant_capacities / plant_capacities.sum()
+                weighted_avg_capacity_factor = (hex_capacity_factor * weights).sum(dim='plant')
+                nuclear_profile.loc[hex_index] = weighted_avg_capacity_factor
+        
+        profiles["nuclear"] = nuclear_profile
+        
     if "solar" in generators:
         # Creating solar generator profile
         solar_profile = cutout.pv(panel= snakemake.config["panel"],

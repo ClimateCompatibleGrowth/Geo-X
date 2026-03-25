@@ -2,3 +2,5 @@ name,bus,p_nom_extendable,capital_cost, carrier
 Wind,DC_bus,TRUE,1241000,wind
 Solar,DC_bus,TRUE,901000,solar
 Hydro,DC_bus,TRUE,1785000,hydro
+Geothermal,DC_bus,TRUE,2.00E+07,geothermal
+Nuclear,DC_bus,TRUE,5.00E+09,nuclear

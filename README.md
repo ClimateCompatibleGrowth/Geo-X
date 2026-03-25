@@ -98,7 +98,7 @@ Geo-X uses **three types of input data**:
 2. Techno-economic and plant parameters  
 3. A configuration file  
 
-If you intend to include **hydropower** or **geothermal** as generation technologies, additional input files are required, as described below.
+If you intend to include **hydropower** or **geothermal** or **nuclear** as generation technologies, additional input files are required, as described below.
 
 ## 1) Prepare input hexagons 
 
@@ -148,8 +148,7 @@ Hydropower input files can be obtained by:
 - Running the [Geo-X-data-prep](https://github.com/ClimateCompatibleGrowth/Geo-X-data-prep) repository 
 - Downloading data from the [HydroBASINS section of HydroSHEDS](https://www.hydrosheds.org/products/hydrobasins), choose a level that suits the country being analysed
 
-Create a `hydro` folder inside `data/[COUNTRY ISO CODE]/` and place the following files inside (one file must be renamed to match the required format):
-
+Place the following files inside `data/[COUNTRY ISO CODE]/`, one file must be renamed to match the required format:
 - `[COUNTRY ISO CODE]_hydropower_dams.gpkg`
 - All the files from the HydroBASINS download (or the Shapefile cannot be used)
 
@@ -157,8 +156,15 @@ Create a `hydro` folder inside `data/[COUNTRY ISO CODE]/` and place the followin
 
 The geothermal GeoPackage file can be obtained by running the [Geo-X-data-prep](https://github.com/ClimateCompatibleGrowth/Geo-X-data-prep) repository.
 
-Create a `geothermal` folder inside `data/[COUNTRY ISO CODE]/` and place the following file inside (must be renamed to match the required format):
+Place the following file inside `data/[COUNTRY ISO CODE]/`, it must be renamed to match the required format:
 - `[COUNTRY ISO CODE]_geothermal_plants.gpkg`
+
+### (Optional) Nuclear GeoPackage file
+
+The nuclear GeoPackage file can be obtained by running the [Geo-X-data-prep](https://github.com/ClimateCompatibleGrowth/Geo-X-data-prep) repository.
+
+Place the following file inside `data/[COUNTRY ISO CODE]/`, it must be renamed to match the required format:
+- `[COUNTRY ISO CODE]_nuclear_plants.gpkg`
 
 ## 2) Prepare input parameter Excel files
 
@@ -266,6 +272,7 @@ Currently supported generator types are:
 - `wind`
 - `hydro`
 - `geothermal`
+- `nuclear`
 
 Ensure that all generators you wish to consider are included in the dictionary, and remove any that are not required.
 
@@ -275,13 +282,14 @@ Generator-specific technology assumptions can be modified as follows:
 
 Installed capacity assumptions are defined in the `gen_capacity` section:
 - `solar` and `wind`: Values can be adjusted as needed for the analysis
-- `hydro` and `geothermal`: Values should not be changed
+- `hydro`, `geothermal` and `nuclear`: Values should not be changed
 
 ### Efficiency of generator plants
 
 Average generation efficiencies can be specified for:
 - `hydro`
 - `geothermal`
+- `nuclear`
 
 Efficiencies should be provided as float values and adjusted as necessary.
 
