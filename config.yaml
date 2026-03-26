@@ -15,22 +15,24 @@ freq: '1H'
 
 # Generators:
 # Modify generators_dict to hold the generators you would like to use. Can
-# be 'solar', 'wind', 'hydro' and 'geothermal'
+# be 'solar', 'wind', 'hydro', 'geothermal', and 'nuclear'
 # Make sure it is in the same style as below
-generators_dict: {'solar' : [], 'wind' : [], 'hydro' : [], 'geothermal' : [],}
+generators_dict: {'solar' : [], 'wind' : [], 'hydro' : [], 'geothermal' : [], 'nuclear' : [],}
 panel: 'CSi'
 turbine: 'NREL_ReferenceTurbine_2020ATB_4MW'
 gen_capacity:
     solar: 1
     wind: 4
-    # Do not change gen_capacity for hydro or geothermal
+    # Do not change gen_capacity for hydro, geothermal or nuclear
     hydro: 1
     geothermal: 1
+    nuclear: 1
 
 # Efficiency of generator plants:
 efficiency:
     hydro: 0.75
     geothermal: 0.9
+    nuclear: 0.33
 
 # Other:
 solver : 'gurobi'

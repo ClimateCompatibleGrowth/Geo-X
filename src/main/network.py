@@ -208,6 +208,8 @@ class Network:
         for gen, gen_list in self.generators.items():
             if gen == "geothermal":
                 self.n.generators.loc[gen.capitalize(), "p_max_pu"] = gen_list[0]
+            elif gen == "nuclear":
+                self.n.generators.loc[gen.capitalize(), "p_max_pu"] = gen_list[0]
             else:
                 self.n.generators_t.p_max_pu[gen.capitalize()] = gen_list[0]
 
