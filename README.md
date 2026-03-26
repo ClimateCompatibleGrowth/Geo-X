@@ -25,6 +25,7 @@ The repository includes illustrative case studies:
 - **Namibia**: hydrogen and ammonia production
 - **Zambia**: copper production
 
+These should be changed for your run(s).
 Parameter references for the hydrogen case are provided at the end of this file.  
 Because the framework is generalised, Geo-X can be applied to a wide range of geographic regions beyond these examples.
 
