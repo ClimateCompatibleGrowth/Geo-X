@@ -91,6 +91,11 @@ def main():
     hexagons = gpd.read_file(str(snakemake.input.hexagons))
     # Displays information on process as it runs.
     logging.basicConfig(level=logging.INFO)
+    # Ensuring EPSG is the right one
+    if hexagons.crs is None:
+        hexagons = hexagons.set_crs(epsg=4326)
+    elif hexagons.crs.to_epsg() != 4326:
+        hexagons = hexagons.to_crs(epsg=4326)
 
     min_lon, min_lat, max_lon, max_lat = calculate_coords(hexagons)
 
