@@ -327,12 +327,6 @@ The following settings are only relevant when `plant_type` is set to `copper`:
 
 - `size_offgrid_feedstocks`: If `True`, a file containing costs related to an off-grid feedstock system will be outputted to the `results/` folder
 
-- `community_energy_access`: Either `False` or a float value:
-  - If `False`, community energy access is not considered
-  - If a float is provided, it represents either:
-    - The percentage of the off-grid population within a hexagon to consider
-    - An absolute number of households
-
 > [!NOTE]  
 > `country` and `weather_year` may be provided as lists if multiple countries or years are being analysed.  
 > You must ensure that all required input files for each country and year are present in the correct locations, as described earlier.

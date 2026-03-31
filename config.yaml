@@ -61,6 +61,3 @@ restrict_hexagons: False
 # Change the below three parameters as necessary, if 'copper' is the plant_type
 grid_construction: True
 size_offgrid_feedstocks: False
-# Either False or Float (indicating % of hexagon offgrid population to 
-# consider, or absolute households)
-community_energy_access: False

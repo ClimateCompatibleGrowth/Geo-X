@@ -453,13 +453,7 @@ if __name__ == "__main__":
         currency = snakemake.config["currency"]
         # Whether to include sizing of off-grid system for feedstock
         size_offgrid_feedstocks = snakemake.config['size_offgrid_feedstocks']
-        # Either False or Float (indicating % of hexagon offgrid population to consider, or absolute households)
-        community_energy_access = snakemake.config['community_energy_access']
         feedstock_output = False
-
-        if community_energy_access != False:
-            # Estimate offgrid population
-            hexagons = estimate_offgrid_pop(hexagons, country_series)
 
         if needs_grid_construction:
             # Calculate grid contruction costs
@@ -697,17 +691,6 @@ if __name__ == "__main__":
                     grid_capacities[i] = np.nan
                     grid_lcoes[i] = np.nan
                     continue
-                
-                # Setting the energy access connections variable
-                if (community_energy_access != False) and (community_energy_access <= 1.0):
-                    # Use a percentage of households
-                    energy_access_connections = hexagons.loc[i, "offgrid_households"] * community_energy_access
-                elif (community_energy_access != False) and (community_energy_access > 1.0):
-                    # Use community_energy_access as absolute number of households
-                    energy_access_connections = community_energy_access
-                else:
-                    # Does not include
-                    energy_access_connections = False
 
                 # Grid-only energy optimisation
                 if needs_grid_construction:
@@ -730,10 +713,6 @@ if __name__ == "__main__":
                 network_class.update_generators(country_series)
 
                 # Offgrid-only optimisation of facility
-                if energy_access_connections != False:
-                    network_class.add_community_energy_demand(energy_access_connections,
-                                                            f'data/community_elec_access_profile_{snakemake.wildcards.country}.csv')
-                
                 # Solve offgrid 
                 network_class.n.lopf(solver_name=solver,
                                     solver_options = {'OutputFlag': 0},

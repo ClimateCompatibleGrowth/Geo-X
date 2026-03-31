@@ -43,8 +43,6 @@ class Network:
     -------
     set_network(demand_profile, times, country_series):
         sets up the network.
-    add_community_energy_demand(energy_access_connections, filepath):
-        adds community energy demand as a load.
     add_grid(country_series, currency):
         adds grid as a generator.
     update_generators(country_series):
@@ -153,28 +151,7 @@ class Network:
                                                                 country_series['Plant lifetime (years)'])
             self.n.links.loc["Rectifier", "capital_cost"] *= CRF(country_series['Plant interest rate'],
                                                                 country_series['Plant lifetime (years)'])
-                                                                   
-    def add_community_energy_demand(self, energy_access_connections, filepath):
-        '''
-        Adds community demand as a load.
-        
-        ...
-        Parameters
-        ----------
-        energy_access_connections : float
-                number of energy access connections required.
-        filepath : string
-            pathway to the community electricity access profile.
-        '''
-        # Community energy demand
-        # Basic model assumes connected to same single AC bus as facility
-        energy_access_df = pd.read_csv(filepath, index_col=0, parse_dates=True)
-        energy_access_demand = energy_access_df * energy_access_connections
-        self.n.add('Load',
-                    'Community Demand',
-                    bus = 'AC_bus',
-                    p_set = energy_access_demand['MW'])
-    
+
     def add_grid(self, country_series, currency):
         '''
         Adds grid as a generator.
