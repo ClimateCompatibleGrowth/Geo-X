@@ -119,8 +119,8 @@ Each hexagon file must contain the following attributes:
   - `waterbody_dist`: Distance to selected waterbodies in area of interest
   - `waterway_dist`: Distance to selected waterways
   - `road_dist`: Distance to road network
-  - `theo_pv`: Theoretical potential of standardised PV plants (can be calculated with [GLAES](https://github.com/FZJ-IEK3-VSA/glaes))
-  - `theo_wind`: Theoretical potential of standardised wind turbines (can be calculated with [GLAES](https://github.com/FZJ-IEK3-VSA/glaes))
+  - `solar`: Theoretical potential of standardised PV plants (can be calculated with [GLAES](https://github.com/FZJ-IEK3-VSA/glaes))
+  - `wind`: Theoretical potential of standardised wind turbines (can be calculated with [GLAES](https://github.com/FZJ-IEK3-VSA/glaes))
 
 ### Additional attributes
 

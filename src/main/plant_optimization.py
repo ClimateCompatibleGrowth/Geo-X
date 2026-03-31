@@ -663,12 +663,7 @@ if __name__ == "__main__":
                 potential = profiles[gen].sel(hexagon=i)
 
                 gen_capacity = snakemake.config['gen_capacity'][gen]
-                if gen == "wind":
-                    max_capacity = hexagons.loc[i,'theo_turbines']*gen_capacity
-                elif gen == "solar":
-                    max_capacity = hexagons.loc[i,'theo_pv']*gen_capacity
-                else:
-                    max_capacity = hexagons.loc[i,gen]*gen_capacity
+                max_capacity = hexagons.loc[i,gen]*gen_capacity
 
                 generators[gen].append(potential)
                 generators[gen].append(max_capacity)
