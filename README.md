@@ -488,15 +488,15 @@ GeoH2 model: Geospatial cost optimization of green hydrogen production including
 MethodsX, 12, 102660. https://doi.org/10.1016/j.mex.2024.102660.*
 
 ```commandline
-@article{Halloran_GeoH2_model_Geospatial_2024,
-author = {Halloran, Claire and Leonard, Alycia and Salmon, Nicholas and Müller, Leander and Hirmer, Stephanie},
-doi = {10.1016/j.mex.2024.102660},
-journal = {MethodsX},
-month = jun,
-pages = {102660},
-title = {{GeoH2 model: Geospatial cost optimization of green hydrogen production including storage and transportation}},
-volume = {12},
-year = {2024}
+@article{Geo-X-2026,
+title = {Geo-X: Generalised geospatial software for production of green commodities},
+journal = {SoftwareX},
+volume = {34},
+pages = {102712},
+year = {2026},
+issn = {2352-7110},
+doi = {https://doi.org/10.1016/j.softx.2026.102712},
+author = {Miguel Sanchez-Lopez and Samiyha Naqvi and Alycia Leonard and Lukas Schirren and Stephanie Hirmer},
 }
 ```
 ___
