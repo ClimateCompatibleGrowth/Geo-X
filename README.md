@@ -483,9 +483,9 @@ ___
 
 If you decide to use Geo-X, please kindly cite us using the following: 
 
-*Halloran, C., Leonard, A., Salmon, N., Müller, L., & Hirmer, S. (2024). 
-GeoH2 model: Geospatial cost optimization of green hydrogen production including storage and transportation. 
-MethodsX, 12, 102660. https://doi.org/10.1016/j.mex.2024.102660.*
+*Sanchez-Lopez, M., Naqvi, S., Leonard, A., Schirren, L., & Hirmer, S. (2026). 
+Geo-X: Generalised geospatial software for production of green commodities. SoftwareX, 34, 102712.
+https://doi.org/10.1016/j.softx.2026.102712*
 
 ```commandline
 @article{Geo-X-2026,
